@@ -26,7 +26,7 @@ SECRET_KEY = 'django-insecure-gpkq8v=uohvn$s-^=d%x%90g16ucktia49hg$os-x=(6&hi=0+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['rockpigeon', 'localhost', '127.0.0.1']
 
 
 # Application definition
