@@ -3,8 +3,10 @@ from django.http import JsonResponse, HttpResponse
 from django.conf import settings
 from .models import FileNode
 from .utils import SuperNoteUtility
+from .atelier_utils import AtelierUtility
 from .ai_service import AIService
 import os
+import shutil
 
 def dashboard(request, path=''):
     """Main dashboard view for browsing files."""
@@ -36,13 +38,61 @@ def dashboard(request, path=''):
         
     return render(request, 'files/dashboard.html', context)
 
+def atelier_dashboard(request):
+    """View to display the Atelier Art gallery."""
+    # Placeholder: Filter for .spd files or specific artwork extensions
+    artwork_nodes = FileNode.objects.filter(extension='spd').order_by('-last_modified')
+    
+    context = {
+        'nodes': artwork_nodes,
+        'title': 'Atelier Art Gallery',
+        'is_atelier': True,
+    }
+    
+    return render(request, 'files/dashboard.html', context)
+
+def toggle_archive_status(request, pk):
+    """Toggle the archive status and move file if necessary."""
+    node = get_object_or_404(FileNode, pk=pk)
+    
+    # Get status from request (HTMX sends form data)
+    new_is_archived = request.POST.get('is_archived') == 'true'
+    
+    if node.is_archived == new_is_archived:
+        return JsonResponse({'success': True, 'is_archived': node.is_archived})
+
+    # Define paths
+    source_base = settings.SUPERNOTE_SOURCE
+    archive_base = settings.ARCHIVE_DIR
+    
+    old_full_path = os.path.join(archive_base if node.is_archived else source_base, node.path)
+    new_full_path = os.path.join(source_base if not new_is_archived else archive_base, node.path)
+    
+    # Ensure destination directory exists
+    os.makedirs(os.path.dirname(new_full_path), exist_ok=True)
+    
+    # Move the file
+    try:
+        shutil.move(old_full_path, new_full_path)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+    
+    # Update state
+    node.is_archived = new_is_archived
+    node.save()
+    
+    return JsonResponse({'success': True, 'is_archived': node.is_archived})
+
 def convert_file(request, pk, output_type):
     """View to trigger file conversion."""
     node = get_object_or_404(FileNode, pk=pk)
     if node.is_directory:
         return JsonResponse({'error': 'Cannot convert a directory'}, status=400)
     
-    input_path = os.path.join(settings.SUPERNOTE_SOURCE, node.path)
+    # Correct source path based on archive status
+    source_base = settings.ARCHIVE_DIR if node.is_archived else settings.SUPERNOTE_SOURCE
+    input_path = os.path.join(source_base, node.path)
+    
     # Define output filename
     output_filename = f"{os.path.splitext(node.name)[0]}.{output_type}"
     # Use ARCHIVE_DIR/conversions/ for temporary storage
@@ -50,11 +100,13 @@ def convert_file(request, pk, output_type):
     os.makedirs(conversion_dir, exist_ok=True)
     output_path = os.path.join(conversion_dir, output_filename)
     
-    success = SuperNoteUtility.convert_note(input_path, output_path, output_type)
+    # Choose conversion tool based on file extension
+    if node.extension == 'spd':
+        success = AtelierUtility.reconstruct_drawing(input_path, output_path)
+    else:
+        success = SuperNoteUtility.convert_note(input_path, output_path, output_type)
     
     if success:
-        # For now, return a link to the file or a success message
-        # In a real app, we might serve the file as a download
         with open(output_path, 'rb') as f:
             response = HttpResponse(f.read(), content_type=f'application/{output_type}')
             response['Content-Disposition'] = f'attachment; filename="{output_filename}"'

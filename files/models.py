@@ -10,6 +10,7 @@ class FileNode(models.Model):
     last_modified = models.DateTimeField()
     hash = models.CharField(max_length=64, blank=True) # SHA-256
     is_directory = models.BooleanField(default=False)
+    is_archived = models.BooleanField(default=False)
     parent = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='children')
     
     created_at = models.DateTimeField(auto_now_add=True)
