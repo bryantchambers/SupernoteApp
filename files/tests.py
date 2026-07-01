@@ -6,9 +6,10 @@ from unittest.mock import MagicMock, patch
 from django.test import RequestFactory, TestCase, override_settings
 from django.utils import timezone
 
-from .models import ArchiveRecord, FileNode, SyncState
+from .models import ArchiveRecord, FileNode, SyncState, ZoteroItem, ZoteroSyncState
 from .services import crawl_supernote_directory, perform_supernote_sync
 from .views import toggle_archive_status, trigger_sync
+from .zotero_service import sync_zotero_library, add_item_to_device, remove_item_from_device, return_note_to_zotero
 
 
 class SupernoteSyncTests(TestCase):
@@ -187,3 +188,125 @@ class SupernoteSyncTests(TestCase):
         self.assertFalse((self.archive_dir / 'Note' / 'sample.note').exists())
         self.assertTrue((self.archive_dir / 'Note' / 'sample.pdf').exists())
         self.assertEqual(payload['success'], True)
+
+
+class ZoteroIntegrationTests(TestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+        self.source_tmp = tempfile.TemporaryDirectory()
+        self.source = Path(self.source_tmp.name)
+        (self.source / 'Document' / 'ZoteroSync').mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self):
+        self.source_tmp.cleanup()
+
+    def _request_stub(self, path, method='GET', params=None, data=None, headers=None, raw=False):
+        if path.endswith('/items/top'):
+            return [{
+                'data': {
+                    'key': 'AAA111',
+                    'itemType': 'journalArticle',
+                    'title': 'Quantum Notes',
+                    'creators': [{'firstName': 'Ada', 'lastName': 'Lovelace'}],
+                    'abstractNote': 'A useful abstract.',
+                    'date': '2026',
+                    'url': 'https://example.com/article',
+                }
+            }]
+        if path.endswith('/children'):
+            return [{
+                'data': {
+                    'itemType': 'attachment',
+                    'key': 'ATT222',
+                    'title': 'Quantum Notes.pdf',
+                    'filename': 'Quantum Notes.pdf',
+                    'contentType': 'application/pdf',
+                }
+            }]
+        if path.endswith('/file') and raw:
+            return b'%PDF-1.4 mock zotero attachment'
+        if path.endswith('/items') and method == 'POST':
+            self.last_zotero_payload = data
+            return {'success': True}
+        raise AssertionError(f'Unexpected Zotero request: {path}')
+
+    def test_sync_zotero_library_caches_items_and_attachment(self):
+        with override_settings(
+            ZOTERO_API_BASE='https://api.zotero.org',
+            ZOTERO_API_KEY='secret',
+            ZOTERO_USER_ID='12345',
+            ZOTERO_LIBRARY_TYPE='user',
+        ):
+            with patch('files.zotero_service._request', side_effect=self._request_stub):
+                result = sync_zotero_library()
+
+        item = ZoteroItem.objects.get(zotero_key='AAA111')
+        self.assertEqual(result['count'], 1)
+        self.assertEqual(item.title, 'Quantum Notes')
+        self.assertEqual(item.attachment_key, 'ATT222')
+        self.assertEqual(ZoteroSyncState.objects.get(key='zotero').status, 'success')
+
+    def test_add_item_to_device_downloads_attachment(self):
+        item = ZoteroItem.objects.create(
+            zotero_key='AAA111',
+            item_type='journalArticle',
+            title='Quantum Notes',
+            attachment_key='ATT222',
+            attachment_filename='Quantum Notes.pdf',
+        )
+
+        with override_settings(
+            SUPERNOTE_SOURCE=self.source,
+            ZOTERO_DEVICE_DIR=self.source / 'Document' / 'ZoteroSync',
+            ZOTERO_API_BASE='https://api.zotero.org',
+            ZOTERO_API_KEY='secret',
+            ZOTERO_USER_ID='12345',
+            ZOTERO_LIBRARY_TYPE='user',
+        ):
+            with patch('files.zotero_service._request', side_effect=self._request_stub):
+                result = add_item_to_device(item)
+
+        item.refresh_from_db()
+        self.assertTrue(item.is_on_device)
+        self.assertTrue((self.source / 'Document' / 'ZoteroSync' / 'quantum-notes.pdf').exists())
+        self.assertIn('quantum-notes.pdf', result['device_path'])
+
+    def test_remove_item_from_device_clears_local_copy(self):
+        item = ZoteroItem.objects.create(
+            zotero_key='AAA111',
+            item_type='journalArticle',
+            title='Quantum Notes',
+            attachment_key='ATT222',
+            attachment_filename='Quantum Notes.pdf',
+            device_path='Document/ZoteroSync/quantum-notes.pdf',
+            is_on_device=True,
+        )
+        (self.source / 'Document' / 'ZoteroSync' / 'quantum-notes.pdf').write_bytes(b'data')
+
+        with override_settings(SUPERNOTE_SOURCE=self.source):
+            remove_item_from_device(item)
+
+        item.refresh_from_db()
+        self.assertFalse(item.is_on_device)
+        self.assertFalse((self.source / 'Document' / 'ZoteroSync' / 'quantum-notes.pdf').exists())
+
+    def test_return_note_to_zotero_posts_parent_note(self):
+        item = ZoteroItem.objects.create(
+            zotero_key='AAA111',
+            item_type='journalArticle',
+            title='Quantum Notes',
+            attachment_key='ATT222',
+        )
+
+        with override_settings(
+            ZOTERO_API_BASE='https://api.zotero.org',
+            ZOTERO_API_KEY='secret',
+            ZOTERO_USER_ID='12345',
+            ZOTERO_LIBRARY_TYPE='user',
+        ):
+            with patch('files.zotero_service._request', side_effect=self._request_stub):
+                return_note_to_zotero(item, 'Return this note')
+
+        item.refresh_from_db()
+        self.assertEqual(item.note_text, 'Return this note')
+        self.assertEqual(self.last_zotero_payload[0]['parentItem'], 'AAA111')

@@ -43,3 +43,37 @@ class SyncState(models.Model):
 
     def __str__(self):
         return f"{self.key}: {self.status}"
+
+
+class ZoteroSyncState(models.Model):
+    key = models.CharField(max_length=64, unique=True, default='zotero')
+    status = models.CharField(max_length=32, default='idle')
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+    last_message = models.TextField(blank=True)
+
+    def __str__(self):
+        return f"{self.key}: {self.status}"
+
+
+class ZoteroItem(models.Model):
+    zotero_key = models.CharField(max_length=64, unique=True)
+    library_type = models.CharField(max_length=16, default='user')
+    item_type = models.CharField(max_length=64, blank=True, default='')
+    title = models.CharField(max_length=512, blank=True, default='')
+    creators = models.JSONField(default=list, blank=True)
+    abstract_note = models.TextField(blank=True, default='')
+    date = models.CharField(max_length=64, blank=True, default='')
+    url = models.URLField(blank=True, default='')
+    attachment_key = models.CharField(max_length=64, blank=True, default='')
+    attachment_title = models.CharField(max_length=512, blank=True, default='')
+    attachment_filename = models.CharField(max_length=512, blank=True, default='')
+    attachment_mime_type = models.CharField(max_length=128, blank=True, default='')
+    device_path = models.CharField(max_length=1024, blank=True, default='')
+    note_text = models.TextField(blank=True, default='')
+    raw_data = models.JSONField(default=dict, blank=True)
+    is_on_device = models.BooleanField(default=False)
+    synced_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.title or self.zotero_key

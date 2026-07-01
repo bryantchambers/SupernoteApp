@@ -1,0 +1,8 @@
+<div id="zotero-status" class="inline-flex items-center px-3 py-2 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+    {% if zotero_error %}
+        Error: {{ zotero_error }}
+    {% else %}
+        {{ zotero_state.status|default:'idle' }}
+        {% if zotero_state.last_synced_at %} · {{ zotero_state.last_synced_at|date:"Y-m-d H:i" }}{% endif %}
+    {% endif %}
+</div>

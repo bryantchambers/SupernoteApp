@@ -1,0 +1,30 @@
+<div class="bg-white shadow-lg rounded-sm border border-slate-200">
+    <header class="px-5 py-4 border-b border-slate-100 flex justify-between items-center">
+        <h2 class="font-semibold text-slate-800">Items <span class="text-slate-400 font-medium">{{ items.count }}</span></h2>
+        <span class="text-xs text-slate-500">{{ zotero_state.status|default:'idle' }}</span>
+    </header>
+    <div class="p-3">
+        <div class="overflow-x-auto">
+            <table class="table-auto w-full">
+                <thead class="text-xs font-semibold uppercase text-slate-400 bg-slate-50">
+                    <tr>
+                        <th class="p-2 whitespace-nowrap"><div class="font-semibold text-left">Title</div></th>
+                        <th class="p-2 whitespace-nowrap"><div class="font-semibold text-left">Attachment</div></th>
+                        <th class="p-2 whitespace-nowrap"><div class="font-semibold text-left">Synced</div></th>
+                        <th class="p-2 whitespace-nowrap"><div class="font-semibold text-center">Device</div></th>
+                        <th class="p-2 whitespace-nowrap"><div class="font-semibold text-center">Actions</div></th>
+                    </tr>
+                </thead>
+                <tbody class="text-sm divide-y divide-slate-100">
+                    {% for item in items %}
+                        {% include 'files/partials/zotero_row.html' %}
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="p-8 text-center text-slate-400">No Zotero items found.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

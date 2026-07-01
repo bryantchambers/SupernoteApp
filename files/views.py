@@ -3,11 +3,12 @@ from django.db.models import Q
 from django.views.decorators.http import require_POST
 from django.http import JsonResponse, HttpResponse
 from django.conf import settings
-from .models import FileNode
+from .models import FileNode, ZoteroItem
 from .utils import SuperNoteUtility
 from .atelier_utils import AtelierUtility
 from .ai_service import AIService
 from .services import perform_supernote_sync, SyncInProgressError, get_sync_state, crawl_supernote_directory, archive_file_node, restore_file_node
+from .zotero_service import sync_zotero_library, get_zotero_state, add_item_to_device, remove_item_from_device, return_note_to_zotero, ZoteroSyncError
 import os
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 
@@ -65,6 +66,84 @@ def atelier_dashboard(request):
     }
 
     return render(request, 'files/dashboard.html', context)
+
+def zotero_dashboard(request):
+    query = request.GET.get('q', '').strip()
+    items = ZoteroItem.objects.all().order_by('-synced_at', '-updated_at')
+    if query:
+        items = items.filter(Q(title__icontains=query) | Q(attachment_title__icontains=query) | Q(attachment_filename__icontains=query) | Q(abstract_note__icontains=query))
+
+    context = {
+        'items': items,
+        'title': 'Zotero Library',
+        'query': query,
+        'zotero_state': get_zotero_state(),
+    }
+    if request.htmx:
+        return render(request, 'files/partials/zotero_list.html', context)
+    return render(request, 'files/zotero.html', context)
+
+
+@require_POST
+def trigger_zotero_sync(request):
+    try:
+        result = sync_zotero_library()
+    except ZoteroSyncError as exc:
+        state = get_zotero_state()
+        state.status = 'error'
+        state.last_message = str(exc)
+        state.save(update_fields=['status', 'last_message'])
+        response = render(request, 'files/partials/zotero_sync_status.html', {'zotero_state': state, 'zotero_error': str(exc)})
+        response.status_code = 500
+        return response
+
+    state = result['state']
+    response = render(request, 'files/partials/zotero_sync_status.html', {'zotero_state': state})
+    response['HX-Trigger'] = 'zotero-refresh-list'
+    return response
+
+
+@require_POST
+def zotero_add_to_device(request, pk):
+    item = get_object_or_404(ZoteroItem, pk=pk)
+    try:
+        result = add_item_to_device(item)
+        crawl_supernote_directory()
+    except ZoteroSyncError as exc:
+        return JsonResponse({'success': False, 'error': str(exc)}, status=400)
+
+    if request.headers.get('HX-Request') == 'true':
+        return render(request, 'files/partials/zotero_row.html', {'item': item})
+    payload = {'success': True}
+    payload.update(result)
+    return JsonResponse(payload)
+
+
+@require_POST
+def zotero_remove_from_device(request, pk):
+    item = get_object_or_404(ZoteroItem, pk=pk)
+    result = remove_item_from_device(item)
+    crawl_supernote_directory()
+    if request.headers.get('HX-Request') == 'true':
+        return render(request, 'files/partials/zotero_row.html', {'item': item})
+    payload = {'success': True}
+    payload.update(result)
+    return JsonResponse(payload)
+
+
+@require_POST
+def zotero_return_note(request, pk):
+    item = get_object_or_404(ZoteroItem, pk=pk)
+    note_text = request.POST.get('note_text', '')
+    try:
+        result = return_note_to_zotero(item, note_text)
+    except ZoteroSyncError as exc:
+        return JsonResponse({'success': False, 'error': str(exc)}, status=400)
+
+    if request.headers.get('HX-Request') == 'true':
+        items = ZoteroItem.objects.all().order_by('-synced_at', '-updated_at')
+        return render(request, 'files/partials/zotero_list.html', {'items': items, 'zotero_state': get_zotero_state()})
+    return JsonResponse({'success': True, 'result': result})
 
 @require_POST
 def trigger_sync(request):

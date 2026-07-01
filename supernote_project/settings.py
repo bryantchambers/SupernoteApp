@@ -89,6 +89,14 @@ SUPERNOTE_SYNC_INTERVAL_MINUTES = 10
 ARCHIVE_DIR = BASE_DIR / "ARCHIVE"
 PROCESSED_MD_DIR = BASE_DIR / "PROCESSED_NOTES"
 
+# Zotero Configuration
+ZOTERO_API_BASE = os.environ.get("ZOTERO_API_BASE", "https://api.zotero.org")
+ZOTERO_API_KEY = os.environ.get("ZOTERO_API_KEY", "")
+ZOTERO_USER_ID = os.environ.get("ZOTERO_USER_ID", "")
+ZOTERO_LIBRARY_TYPE = os.environ.get("ZOTERO_LIBRARY_TYPE", "user")
+ZOTERO_DEVICE_DIR = BASE_DIR / "Supernote" / "Document" / "ZoteroSync"
+ZOTERO_ARCHIVE_DIR = ARCHIVE_DIR / "zotero"
+
 # AI Configuration
 GOOGLE_GENAI_API_KEY = os.environ.get("GOOGLE_GENAI_API_KEY", "")
 

@@ -1,0 +1,44 @@
+{% load lucide_icons %}
+<tr class="hover:bg-slate-50 transition duration-150">
+    <td class="p-2 align-top">
+        <div class="font-medium text-slate-800">{{ item.title|default:item.zotero_key }}</div>
+        {% if item.abstract_note %}<div class="text-xs text-slate-500 mt-1 line-clamp-2">{{ item.abstract_note }}</div>{% endif %}
+    </td>
+    <td class="p-2 align-top text-slate-600">
+        <div>{{ item.attachment_title|default:'No attachment cached' }}</div>
+        <div class="text-xs text-slate-400">{{ item.attachment_filename }}</div>
+    </td>
+    <td class="p-2 align-top text-slate-500">{{ item.synced_at|date:"Y-m-d H:i" }}</td>
+    <td class="p-2 align-top text-center">
+        {% if item.is_on_device %}
+        <span class="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">On device</span>
+        {% else %}
+        <span class="inline-flex items-center rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">Library only</span>
+        {% endif %}
+    </td>
+    <td class="p-2 align-top">
+        <div class="flex justify-center gap-2">
+            {% if item.is_on_device %}
+            <button class="text-slate-400 hover:text-indigo-500 transition duration-150" title="Remove from device"
+                    hx-post="{% url 'files:zotero_remove_from_device' item.pk %}"
+                    hx-target="closest tr"
+                    hx-swap="outerHTML"
+                    hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+                {% icon "minus" "w-5 h-5" %}
+            </button>
+            {% else %}
+            <button class="text-slate-400 hover:text-indigo-500 transition duration-150" title="Add to device"
+                    hx-post="{% url 'files:zotero_add_to_device' item.pk %}"
+                    hx-target="closest tr"
+                    hx-swap="outerHTML"
+                    hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+                {% icon "plus" "w-5 h-5" %}
+            </button>
+            {% endif %}
+            <button class="text-slate-400 hover:text-indigo-500 transition duration-150" title="Return note"
+                    @click.prevent="$dispatch('open-zotero-note-modal', { pk: {{ item.pk }}, title: '{{ item.title|escapejs }}' })">
+                {% icon "notebook-pen" "w-5 h-5" %}
+            </button>
+        </div>
+    </td>
+</tr>

@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% load lucide_icons %}
+
+{% block title %}Zotero Library{% endblock %}
+
+{% block content %}
+<div class="sm:flex sm:justify-between sm:items-center mb-8">
+    <div class="mb-4 sm:mb-0">
+        <h1 class="text-2xl md:text-3xl text-slate-800 font-bold">{{ title }}</h1>
+        <p class="text-sm text-slate-500 mt-1">Synced papers and device handoff.</p>
+    </div>
+    <div class="flex items-center gap-3">
+        <form class="flex items-center gap-2" hx-post="{% url 'files:zotero_sync' %}" hx-target="#zotero-status" hx-swap="outerHTML">
+            {% csrf_token %}
+            <button type="submit" class="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded text-sm">
+                <span>Sync Zotero</span>
+            </button>
+        </form>
+        {% include 'files/partials/zotero_sync_status.html' %}
+    </div>
+</div>
+
+<div class="mb-6">
+    <form method="get" class="flex gap-2 max-w-xl">
+        <input type="search" name="q" value="{{ query }}" placeholder="Search Zotero items" class="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+        <button type="submit" class="inline-flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded text-sm">Search</button>
+    </form>
+</div>
+
+<div id="zotero-browser"
+     hx-get="{% url 'files:zotero_dashboard' %}"
+     hx-trigger="zotero-refresh-list from:body"
+     hx-target="#zotero-browser"
+     hx-swap="innerHTML"
+     class="transition-all duration-300">
+    {% include 'files/partials/zotero_list.html' %}
+</div>
+
+<div x-data="{ open: false, pk: null, title: '', noteText: '' }"
+     @open-zotero-note-modal.window="open = true; pk = $event.detail.pk; title = $event.detail.title; noteText = ''"
+     x-show="open"
+     class="fixed inset-0 z-50 overflow-y-auto"
+     x-cloak>
+    <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+        <div x-show="open" class="fixed inset-0 transition-opacity bg-slate-900 bg-opacity-30" aria-hidden="true"></div>
+        <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+        <div x-show="open" class="inline-block px-4 pt-5 pb-4 overflow-hidden text-left align-bottom transition-all transform bg-white rounded-lg shadow-xl sm:my-8 sm:align-middle sm:max-w-3xl sm:w-full sm:p-6 relative">
+            <div class="absolute top-0 right-0 pt-4 pr-4">
+                <button @click="open = false" class="text-slate-400 hover:text-slate-500">
+                    {% icon "x" "w-6 h-6" %}
+                </button>
+            </div>
+            <h3 class="text-lg font-medium text-slate-900 mb-4" x-text="'Return Note: ' + title"></h3>
+            <form hx-post="{% url 'files:zotero_return_note' 0 %}" hx-target="#zotero-browser" hx-swap="innerHTML" x-bind:hx-post="'/zotero/return/' + pk + '/'" @htmx:after-request.window="if ($event.detail.target && $event.detail.target.id === 'zotero-browser') { open = false; }">
+                {% csrf_token %}
+                <textarea name="note_text" x-model="noteText" class="w-full h-48 p-3 border border-slate-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500" placeholder="Write a note to send back to Zotero..."></textarea>
+                <div class="mt-4 flex justify-end gap-2">
+                    <button type="button" @click="open = false" class="px-4 py-2 rounded border border-slate-300 text-sm text-slate-700">Cancel</button>
+                    <button type="submit" class="px-4 py-2 rounded bg-indigo-600 text-white text-sm">Send to Zotero</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
