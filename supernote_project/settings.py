@@ -67,6 +67,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'files.context_processors.sync_context',
             ],
         },
     },
@@ -81,7 +82,10 @@ INTERNAL_IPS = [
 ]
 
 # SuperNote Configuration
-SUPERNOTE_SOURCE = BASE_DIR / "SUPERNOTE_DEVELOPMENT_COPY"
+SUPERNOTE_SOURCE = BASE_DIR / "Supernote"
+SUPERNOTE_REMOTE = "SuperNote:Supernote"
+SUPERNOTE_SYNC_LOCK_FILE = BASE_DIR / ".sync" / "supernote.lock"
+SUPERNOTE_SYNC_INTERVAL_MINUTES = 10
 ARCHIVE_DIR = BASE_DIR / "ARCHIVE"
 PROCESSED_MD_DIR = BASE_DIR / "PROCESSED_NOTES"
 

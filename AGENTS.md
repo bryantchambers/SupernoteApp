@@ -26,7 +26,9 @@ All autonomous agents, tools, and human developers must strictly adhere to the f
 
 1.  **Environment Confinement:** Development must *only* occur within the mamba environment named `SuperNoteTools` or the designated local development workspace folder.
 2.  **No Unilateral Package Management:** Agents must **NOT** add packages, modify requirements files, or alter the core system independently. If a new dependency or system change is required, the agent must ask the **Orchestrator** to perform the addition.
-3.  **Token Optimization:** Agents must utilize the `rtk` and `sqz` tools to reduce tokens and compress context wherever possible during communication and context sharing.
+3.  **Token Optimization (`rtk` & `sqz` Mandate):** Agents MUST explicitly format their communication using `rtk` (reduce token overhead) and `sqz` (squeeze context) protocols.
+    *   **Enforcement:** All agent responses must be extremely terse, dropping conversational filler.
+    *   **Context Sharing:** When passing data between agents or the Orchestrator, use aggressive compression (bullet points, abbreviations, code-only snippets) prefixed with `[sqz]`.
 4.  **Configuration Phasing:** Hardcode the file system location to the local `Supernote` directory for the initial development phase. Ensure this is easily swappable to an App Settings configuration parameter for the production phase (which will utilize `rclone` for OneDrive).
 5.  **No Code Generation in this File:** This document is strictly for architectural, behavioral, and rule-based guidance. 
 
@@ -129,5 +131,16 @@ use a modern interface with a mobile and desktop interface. consider Django or o
 
 ## 7. Lessons Learned and Memories
 
-## 8. Pending Tasks (Post-Phase 3)
-*   **Quick Edit Implementation:** Complete the backend logic for `add_text_to_note` in `utils.py` and hook it up to the dashboard modal. Research if adding keywords/metadata is the most viable path for "writing" back to the device.
+* **Atelier Navigation:** Dedicated URLs (`/atelier/`) and views are superior to catch-all patterns for specific interface tabs.
+* **Storage Toggle UI:** Radio buttons (`Synced` vs `Archived`) provide a clearer user selection experience than a single checkbox for state toggling.
+* **Asset Management:** Always ensure `collectstatic` is run when updating static files; browser hard-reloads are essential for seeing CSS/JS updates.
+* **Conversion Robustness:** Ensure `convert_file` view dynamically resolves source paths (`SUPERNOTE_SOURCE` vs `ARCHIVE_DIR`) based on the file's `is_archived` database state.
+* **Server Stability:** Avoid duplicated view function definitions in `views.py` to prevent reload failures.
+
+## 8. Pending Tasks
+*   **Phase 5: Continuous Sync & Watcher:**
+    *   Implement the `watchdog` daemon script to monitor the `SUPERNOTE_DEVELOPMENT_COPY` folder.
+    *   Implement database synchronization logic to handle file creations, modifications, and deletions detected by `watchdog`.
+    *   Connect the UI to receive real-time updates (via HTMX, Polling, or WebSockets).
+*   **Quick Edit Implementation:** Complete the backend logic for `add_text_to_note` in `utils.py` and hook it up to the dashboard modal.
+*   **Rclone Integration:** Transition from the local `SUPERNOTE_DEVELOPMENT_COPY` folder to the actual OneDrive sync path configured via `rclone`.

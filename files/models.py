@@ -25,8 +25,21 @@ class FileNode(models.Model):
 class ArchiveRecord(models.Model):
     file_node = models.ForeignKey(FileNode, on_delete=models.CASCADE, related_name='archives')
     archive_path = models.CharField(max_length=1024)
+    readable_path = models.CharField(max_length=1024, blank=True, default='')
     version_hash = models.CharField(max_length=64)
     archived_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"{self.file_node.name} - {self.archived_at}"
+
+
+class SyncState(models.Model):
+    key = models.CharField(max_length=64, unique=True, default='supernote')
+    status = models.CharField(max_length=32, default='idle')
+    direction = models.CharField(max_length=16, default='pull')
+    last_started_at = models.DateTimeField(null=True, blank=True)
+    last_finished_at = models.DateTimeField(null=True, blank=True)
+    last_message = models.TextField(blank=True)
+
+    def __str__(self):
+        return f"{self.key}: {self.status}"

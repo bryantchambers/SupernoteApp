@@ -1,0 +1,39 @@
+<div id="sync-status" class="flex items-center space-x-2">
+    <span class="text-xs font-medium px-2 py-1 rounded-full {% if sync_state and sync_state.status == 'success' %}bg-emerald-100 text-emerald-700{% elif sync_state and sync_state.status == 'running' %}bg-amber-100 text-amber-700{% elif sync_state and sync_state.status == 'error' %}bg-rose-100 text-rose-700{% else %}bg-slate-100 text-slate-600{% endif %}">
+        {% if sync_state %}
+            {{ sync_state.status|capfirst }}
+        {% else %}
+            Sync idle
+        {% endif %}
+    </span>
+    <span class="hidden sm:inline text-xs text-slate-500">
+        {% if sync_state and sync_state.last_finished_at %}
+            {{ sync_state.last_finished_at|date:"Y-m-d H:i" }}
+        {% else %}
+            Never
+        {% endif %}
+    </span>
+    {% if sync_error %}
+    <span class="hidden md:inline max-w-64 truncate text-xs text-rose-600" title="{{ sync_error|escape }}">
+        {{ sync_error }}
+    </span>
+    {% elif sync_state and sync_state.last_message and sync_state.status == 'error' %}
+    <span class="hidden md:inline max-w-64 truncate text-xs text-rose-600" title="{{ sync_state.last_message|escape }}">
+        {{ sync_state.last_message }}
+    </span>
+    {% endif %}
+    <form hx-post="{% url 'files:trigger_sync' %}" hx-target="#sync-status" hx-swap="outerHTML" class="inline-flex">
+        {% csrf_token %}
+        <input type="hidden" name="direction" value="pull">
+        <button type="submit" class="h-8 px-3 text-xs font-semibold rounded-full bg-indigo-600 text-white hover:bg-indigo-700 transition duration-150" title="Sync from OneDrive">
+            Sync Now
+        </button>
+    </form>
+    <form hx-post="{% url 'files:trigger_sync' %}" hx-target="#sync-status" hx-swap="outerHTML" class="inline-flex">
+        {% csrf_token %}
+        <input type="hidden" name="direction" value="push">
+        <button type="submit" class="h-8 px-3 text-xs font-semibold rounded-full bg-slate-200 text-slate-700 hover:bg-slate-300 transition duration-150" title="Push local changes to OneDrive">
+            Push
+        </button>
+    </form>
+</div>

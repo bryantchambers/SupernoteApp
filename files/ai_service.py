@@ -46,7 +46,7 @@ class AIService:
         
         try:
             response = client.models.generate_content(
-                model="gemini-2.0-flash", # or gemini-1.5-flash if 2.5 is not yet the exact ID
+                model="gemini-2.5-flash",
                 contents=content_parts
             )
             

@@ -45,6 +45,7 @@ class SuperNoteUtility:
             return False
         
         os.makedirs(output_dir, exist_ok=True)
+        output_prefix = os.path.join(output_dir, "page.png")
         
         command = [
             "mamba", "run", "-n", "SuperNoteTools",
@@ -52,7 +53,7 @@ class SuperNoteUtility:
             "-a", 
             "-t", "png",
             input_path,
-            output_dir
+            output_prefix
         ]
         
         try:
