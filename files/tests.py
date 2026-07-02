@@ -13,8 +13,8 @@ from django.utils import timezone
 from .models import ArchiveRecord, FileNode, SyncState, ZoteroItem, ZoteroSyncState
 from .services import crawl_supernote_directory, perform_supernote_sync
 from .ai_service import AIService
-from .views import toggle_archive_status, trigger_sync, process_with_ai, zotero_add_to_device, zotero_remove_from_device, zotero_return_note_submit
-from .zotero_service import sync_zotero_library, add_item_to_device, remove_item_from_device, return_note_to_zotero, ZoteroSyncError
+from .views import toggle_archive_status, trigger_sync, process_with_ai, recycle_file_node, restore_file_from_recycle, empty_recycle_bin, zotero_add_to_device, zotero_remove_from_device, zotero_return_note_submit, zotero_recycle_item, zotero_restore_item, zotero_empty_bin, zotero_recycle_bin
+from .zotero_service import sync_zotero_library, add_item_to_device, remove_item_from_device, move_item_to_recycle_bin, restore_item_from_recycle_bin, empty_recycle_bin_item, return_note_to_zotero, ZoteroSyncError
 
 
 class SupernoteSyncTests(TestCase):
@@ -155,6 +155,101 @@ class SupernoteSyncTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'checked', response.content)
         self.assertIn(b'Archived', response.content)
+
+    def test_recycle_file_moves_source_into_recycle_bin(self):
+        parent = FileNode.objects.create(
+            path='Note',
+            name='Note',
+            extension='',
+            size=0,
+            last_modified=timezone.now(),
+            hash='parent',
+            is_directory=True,
+            is_archived=False,
+        )
+        node = FileNode.objects.create(
+            path='Note/sample.note',
+            name='sample.note',
+            extension='note',
+            size=11,
+            last_modified=timezone.now(),
+            hash='abc123',
+            is_directory=False,
+            is_archived=False,
+            parent=parent,
+        )
+
+        with override_settings(SUPERNOTE_SOURCE=self.source, ARCHIVE_DIR=self.archive_dir):
+            request = self.factory.post(f'/recycle/{node.pk}/', HTTP_HX_REQUEST='true')
+            response = recycle_file_node(request, node.pk)
+
+        self.assertEqual(response.status_code, 200)
+        node.refresh_from_db()
+        self.assertTrue(node.is_recycled)
+        self.assertTrue(node.recycled_at is not None)
+        self.assertFalse((self.source / 'Note' / 'sample.note').exists())
+        self.assertTrue((self.archive_dir / 'recycle' / 'Note' / 'sample.note').exists())
+
+    def test_restore_file_from_recycle_moves_file_back_to_source(self):
+        parent = FileNode.objects.create(
+            path='Note',
+            name='Note',
+            extension='',
+            size=0,
+            last_modified=timezone.now(),
+            hash='parent',
+            is_directory=True,
+            is_archived=False,
+        )
+        node = FileNode.objects.create(
+            path='Note/sample.note',
+            name='sample.note',
+            extension='note',
+            size=11,
+            last_modified=timezone.now(),
+            hash='abc123',
+            is_directory=False,
+            is_archived=False,
+            is_recycled=True,
+            recycled_at=timezone.now(),
+            parent=parent,
+        )
+        (self.archive_dir / 'recycle' / 'Note').mkdir(parents=True, exist_ok=True)
+        (self.archive_dir / 'recycle' / 'Note' / 'sample.note').write_text('recycled copy')
+
+        with override_settings(SUPERNOTE_SOURCE=self.source, ARCHIVE_DIR=self.archive_dir):
+            request = self.factory.post(f'/recycle/restore/{node.pk}/', {'q': ''}, HTTP_HX_REQUEST='true')
+            response = restore_file_from_recycle(request, node.pk)
+
+        self.assertEqual(response.status_code, 200)
+        node.refresh_from_db()
+        self.assertFalse(node.is_recycled)
+        self.assertTrue((self.source / 'Note' / 'sample.note').exists())
+        self.assertFalse((self.archive_dir / 'recycle' / 'Note' / 'sample.note').exists())
+
+    def test_empty_recycle_bin_deletes_recycled_items(self):
+        node = FileNode.objects.create(
+            path='Note/sample.note',
+            name='sample.note',
+            extension='note',
+            size=11,
+            last_modified=timezone.now(),
+            hash='abc123',
+            is_directory=False,
+            is_archived=False,
+            is_recycled=True,
+            recycled_at=timezone.now(),
+        )
+        (self.archive_dir / 'recycle' / 'Note').mkdir(parents=True, exist_ok=True)
+        (self.archive_dir / 'recycle' / 'Note' / 'sample.note').write_text('recycled copy')
+
+        with override_settings(SUPERNOTE_SOURCE=self.source, ARCHIVE_DIR=self.archive_dir):
+            request = self.factory.post('/recycle/empty/', {'q': ''}, HTTP_HX_REQUEST='true')
+            response = empty_recycle_bin(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(FileNode.objects.filter(pk=node.pk).exists())
+        self.assertFalse((self.archive_dir / 'recycle' / 'Note' / 'sample.note').exists())
 
     def test_toggle_restore_moves_file_back_to_source(self):
         parent = FileNode.objects.create(
@@ -565,3 +660,85 @@ class ZoteroIntegrationTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'Quantum Notes', response.content)
+
+    def test_recycle_item_moves_item_out_of_active_list(self):
+        item = ZoteroItem.objects.create(
+            zotero_key='REC111',
+            item_type='journalArticle',
+            title='Recyclable Note',
+            attachment_key='ATTREC',
+            attachment_filename='Recyclable Note.pdf',
+            attachment_link_mode='imported_file',
+        )
+
+        request = self.factory.post(f'/zotero/recycle/{item.pk}/', HTTP_HX_REQUEST='true')
+        response = zotero_recycle_item(request, item.pk)
+
+        item.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(item.is_recycled)
+        self.assertEqual(item.last_transfer_status, 'recycled')
+        self.assertEqual(ZoteroItem.objects.filter(is_recycled=False).count(), 0)
+        self.assertEqual(ZoteroItem.objects.filter(is_recycled=True).count(), 1)
+
+    def test_restore_item_brings_item_back_to_active_list(self):
+        item = ZoteroItem.objects.create(
+            zotero_key='REC111',
+            item_type='journalArticle',
+            title='Recyclable Note',
+            attachment_key='ATTREC',
+            attachment_filename='Recyclable Note.pdf',
+            attachment_link_mode='imported_file',
+            is_recycled=True,
+            recycled_at=timezone.now(),
+            last_transfer_status='recycled',
+        )
+
+        request = self.factory.post(f'/zotero/restore/{item.pk}/', HTTP_HX_REQUEST='true')
+        response = zotero_restore_item(request, item.pk)
+
+        item.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(item.is_recycled)
+        self.assertEqual(item.last_transfer_status, 'idle')
+
+    def test_empty_bin_deletes_recycled_items(self):
+        ZoteroItem.objects.create(
+            zotero_key='REC111',
+            item_type='journalArticle',
+            title='Recyclable Note',
+            attachment_key='ATTREC',
+            attachment_filename='Recyclable Note.pdf',
+            attachment_link_mode='imported_file',
+            is_recycled=True,
+            recycled_at=timezone.now(),
+        )
+
+        request = self.factory.post('/zotero/empty-bin/', HTTP_HX_REQUEST='true')
+        response = zotero_empty_bin(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ZoteroItem.objects.filter(is_recycled=True).count(), 0)
+
+    def test_sync_preserves_recycled_items(self):
+        ZoteroItem.objects.create(
+            zotero_key='REC111',
+            item_type='journalArticle',
+            title='Recyclable Note',
+            attachment_key='ATTREC',
+            attachment_filename='Recyclable Note.pdf',
+            attachment_link_mode='imported_file',
+            is_recycled=True,
+            recycled_at=timezone.now(),
+        )
+
+        with override_settings(
+            ZOTERO_API_BASE='https://api.zotero.org',
+            ZOTERO_API_KEY='secret',
+            ZOTERO_USER_ID='12345',
+            ZOTERO_LIBRARY_TYPE='user',
+        ):
+            with patch('files.zotero_service._request', side_effect=self._request_stub):
+                sync_zotero_library()
+
+        self.assertTrue(ZoteroItem.objects.filter(zotero_key='REC111', is_recycled=True).exists())

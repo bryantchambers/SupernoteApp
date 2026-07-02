@@ -4,7 +4,7 @@
 {% block title %}Zotero Library{% endblock %}
 
 {% block content %}
-<div class="sm:flex sm:justify-between sm:items-center mb-8">
+<div class="sm:flex sm:justify-between sm:items-center mb-6">
     <div class="mb-4 sm:mb-0">
         <h1 class="text-2xl md:text-3xl text-slate-800 font-bold">{{ title }}</h1>
         <p class="text-sm text-slate-500 mt-1">100 most recently added references with visible device transfer status.</p>
@@ -20,8 +20,11 @@
     </div>
 </div>
 
-<div class="mb-6">
-    <form method="get" class="flex gap-2 max-w-xl">
+<div class="mb-4 flex items-center justify-between gap-4">
+    <div class="inline-flex rounded border border-slate-200 bg-white p-1">
+        <a href="{% url 'files:zotero_dashboard' %}" class="px-3 py-2 text-sm font-medium bg-slate-900 text-white">Library</a>
+    </div>
+    <form method="get" class="flex gap-2 max-w-xl w-full justify-end">
         <input type="search" name="q" value="{{ query }}" placeholder="Search Zotero items" class="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
         <button type="submit" class="inline-flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded text-sm">Search</button>
     </form>

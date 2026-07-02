@@ -11,6 +11,9 @@ class FileNode(models.Model):
     hash = models.CharField(max_length=64, blank=True) # SHA-256
     is_directory = models.BooleanField(default=False)
     is_archived = models.BooleanField(default=False)
+    is_recycled = models.BooleanField(default=False)
+    recycled_at = models.DateTimeField(null=True, blank=True)
+    recycle_source_is_archived = models.BooleanField(default=False)
     parent = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='children')
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -77,6 +80,8 @@ class ZoteroItem(models.Model):
     note_text = models.TextField(blank=True, default='')
     raw_data = models.JSONField(default=dict, blank=True)
     is_on_device = models.BooleanField(default=False)
+    is_recycled = models.BooleanField(default=False)
+    recycled_at = models.DateTimeField(null=True, blank=True)
     last_transfer_status = models.CharField(max_length=32, blank=True, default='idle')
     last_transfer_message = models.TextField(blank=True, default='')
     synced_at = models.DateTimeField(null=True, blank=True)
@@ -137,17 +142,22 @@ class ZoteroItem(models.Model):
             'idle': 'Ready',
             'success': 'On device',
             'removed': 'Library only',
+            'recycled': 'In recycle bin',
             'missing_remote': 'Missing remote file',
             'unresolved_linked': 'Linked path only',
             'sync_failed': 'Sync failed',
             'error': 'Needs attention',
         }
+        if self.is_recycled:
+            return labels['recycled']
         if self.is_on_device and self.last_transfer_status == 'idle':
             return 'On device'
         return labels.get(self.last_transfer_status or 'idle', 'Ready')
 
     @property
     def transfer_status_tone(self):
+        if self.is_recycled:
+            return 'error'
         if self.last_transfer_status == 'success' or (self.is_on_device and self.last_transfer_status == 'idle'):
             return 'success'
         if self.last_transfer_status in {'missing_remote', 'unresolved_linked', 'sync_failed', 'error'}:

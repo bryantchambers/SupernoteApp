@@ -81,6 +81,24 @@ def _readable_archive_path(node):
     return archive_full_path
 
 
+def _recycle_full_path(node):
+    return Path(settings.ARCHIVE_DIR) / 'recycle' / node.path
+
+
+def _recycle_readable_path(node):
+    recycle_path = _recycle_full_path(node)
+    if node.extension == 'note':
+        return recycle_path.with_suffix('.pdf')
+    if node.extension == 'spd':
+        return recycle_path.with_suffix('.png')
+    return recycle_path
+
+
+def _current_source_path(node):
+    source_base = Path(settings.ARCHIVE_DIR) if node.is_archived else Path(settings.SUPERNOTE_SOURCE)
+    return source_base / node.path
+
+
 def _ensure_parent(path):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
 
@@ -160,6 +178,95 @@ def restore_file_node(node):
     return {'source_path': str(source_path)}
 
 
+def move_file_node_to_recycle(node):
+    source_path = _current_source_path(node)
+    recycle_path = _recycle_full_path(node)
+    _ensure_parent(recycle_path)
+    if recycle_path.exists():
+        if recycle_path.is_file():
+            recycle_path.unlink()
+        else:
+            raise RuntimeError(f'Recycle path exists and is not a file: {recycle_path}')
+
+    if not source_path.exists():
+        raise FileNotFoundError(f'Source file not found: {source_path}')
+
+    shutil.move(str(source_path), str(recycle_path))
+
+    if node.is_archived:
+        readable_source = _readable_archive_path(node)
+        readable_recycle = _recycle_readable_path(node)
+        if readable_source.exists():
+            _ensure_parent(readable_recycle)
+            if readable_recycle.exists():
+                if readable_recycle.is_file():
+                    readable_recycle.unlink()
+                else:
+                    raise RuntimeError(f'Recycle path exists and is not a file: {readable_recycle}')
+            shutil.move(str(readable_source), str(readable_recycle))
+
+    node.is_recycled = True
+    node.recycled_at = timezone.now()
+    node.recycle_source_is_archived = node.is_archived
+    node.save(update_fields=['is_recycled', 'recycled_at', 'recycle_source_is_archived', 'updated_at'])
+    return {'recycle_path': str(recycle_path)}
+
+
+def restore_file_node_from_recycle(node):
+    recycle_path = _recycle_full_path(node)
+    destination_path = _archive_full_path(node) if node.recycle_source_is_archived else _live_full_path(node)
+    _ensure_parent(destination_path)
+    if destination_path.exists():
+        if destination_path.is_file():
+            destination_path.unlink()
+        else:
+            raise RuntimeError(f'Destination path exists and is not a file: {destination_path}')
+
+    if not recycle_path.exists():
+        raise FileNotFoundError(f'Recycle file not found: {recycle_path}')
+
+    shutil.move(str(recycle_path), str(destination_path))
+
+    if node.recycle_source_is_archived and node.extension in {'note', 'spd'}:
+        readable_recycle = _recycle_readable_path(node)
+        readable_destination = _readable_archive_path(node)
+        if readable_recycle.exists():
+            _ensure_parent(readable_destination)
+            if readable_destination.exists():
+                if readable_destination.is_file():
+                    readable_destination.unlink()
+                else:
+                    raise RuntimeError(f'Destination path exists and is not a file: {readable_destination}')
+            shutil.move(str(readable_recycle), str(readable_destination))
+        else:
+            _create_readable_archive_copy(node, destination_path)
+
+    node.is_recycled = False
+    node.recycled_at = None
+    node.save(update_fields=['is_recycled', 'recycled_at', 'updated_at'])
+    if node.recycle_source_is_archived:
+        node.is_archived = True
+        node.save(update_fields=['is_archived', 'updated_at'])
+    return {'destination_path': str(destination_path)}
+
+
+def empty_file_recycle_bin_item(node):
+    recycle_path = _recycle_full_path(node)
+    readable_recycle = _recycle_readable_path(node)
+    if recycle_path.exists():
+        if recycle_path.is_file():
+            recycle_path.unlink()
+        else:
+            shutil.rmtree(recycle_path)
+    if readable_recycle.exists() and readable_recycle != recycle_path:
+        if readable_recycle.is_file():
+            readable_recycle.unlink()
+        else:
+            shutil.rmtree(readable_recycle)
+    node.archives.all().delete()
+    node.delete()
+
+
 def crawl_supernote_directory():
     """Recursively scan the SuperNote source directory and sync with the database."""
     source_dir = ensure_supernote_source_exists()
@@ -222,12 +329,15 @@ def crawl_supernote_directory():
                     'last_modified': mtime,
                     'hash': file_hash,
                     'is_directory': False,
+                    'is_recycled': False,
+                    'recycled_at': None,
+                    'recycle_source_is_archived': False,
                     'parent': parent
                 }
             )
 
     # Cleanup: Remove records for live source files that no longer exist
-    FileNode.objects.filter(is_archived=False).exclude(path__in=seen_paths).delete()
+    FileNode.objects.filter(is_archived=False, is_recycled=False).exclude(path__in=seen_paths).delete()
 
 
 def run_rclone_sync(direction="pull"):

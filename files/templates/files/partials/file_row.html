@@ -81,6 +81,13 @@
                     @click.prevent="$dispatch('open-edit-modal', { pk: {{ node.pk }}, name: '{{ node.name|escapejs }}' })">
                 {% icon "square-pen" "w-5 h-5" %}
             </button>
+            <button class="inline-flex items-center justify-center rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition duration-150" title="Move to Recycle Bin"
+                    hx-post="{% url 'files:recycle_file_node' node.pk %}"
+                    hx-target="#file-browser"
+                    hx-swap="innerHTML"
+                    hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+                {% icon "trash-2" "w-5 h-5" %}
+            </button>
             {% endif %}
             {% endif %}
         </div>

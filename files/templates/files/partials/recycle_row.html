@@ -1,0 +1,30 @@
+{% load lucide_icons %}
+<tr class="hover:bg-slate-50 transition duration-150">
+    <td class="p-2 whitespace-nowrap">
+        <div class="flex items-center">
+            {% icon "trash-2" "shrink-0 mr-2 w-5 h-5 text-rose-400" %}
+            <span class="text-slate-700 font-medium">{{ item.name }}</span>
+        </div>
+    </td>
+    <td class="p-2 whitespace-nowrap">
+        <div class="text-left text-slate-500 text-xs break-all">{{ item.path }}</div>
+    </td>
+    <td class="p-2 whitespace-nowrap">
+        <div class="text-left font-medium text-slate-400">{{ item.size|filesizeformat }}</div>
+    </td>
+    <td class="p-2 whitespace-nowrap">
+        <div class="text-left text-slate-500">{{ item.recycled_at|date:"Y-m-d H:i" }}</div>
+    </td>
+    <td class="p-2 whitespace-nowrap">
+        <div class="flex justify-center">
+            <form hx-post="{% url 'files:restore_file_from_recycle' item.pk %}" hx-target="#recycle-browser" hx-swap="innerHTML" class="inline-flex">
+                {% csrf_token %}
+                <input type="hidden" name="q" value="{{ query }}">
+                <button type="submit" class="inline-flex items-center gap-2 px-3 py-2 rounded border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold">
+                    {% icon "rotate-ccw" "w-4 h-4" %}
+                    Restore
+                </button>
+            </form>
+        </div>
+    </td>
+</tr>

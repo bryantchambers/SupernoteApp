@@ -27,6 +27,8 @@ ICON_PATHS = {
     'plus': '<path d="M12 5v14"></path><path d="M5 12h14"></path>',
     'notebook-pen': '<path d="M7 2h8a2 2 0 012 2v16a2 2 0 01-2 2H7a2 2 0 01-2-2V4a2 2 0 012-2z"></path><path d="M9 8h6"></path><path d="M9 12h4"></path><path d="M14 16l4-4 2 2-4 4H14z"></path>',
     'refresh-cw': '<path d="M21 12a9 9 0 10-3.3 7"></path><path d="M21 3v6h-6"></path>',
+    'rotate-ccw': '<path d="M3 12a9 9 0 1 0 3-6.7"></path><path d="M3 3v6h6"></path>',
+    'trash-2': '<path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M6 6l1 14h10l1-14"></path><path d="M10 11v6"></path><path d="M14 11v6"></path>',
     'circle-plus': '<circle cx="12" cy="12" r="9"></circle><path d="M12 8v8"></path><path d="M8 12h8"></path>',
 }
 

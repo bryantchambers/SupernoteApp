@@ -7,18 +7,17 @@ from .models import FileNode, ZoteroItem
 from .utils import SuperNoteUtility
 from .atelier_utils import AtelierUtility
 from .ai_service import AIService
-from .services import perform_supernote_sync, SyncInProgressError, get_sync_state, crawl_supernote_directory, archive_file_node, restore_file_node
-from .zotero_service import sync_zotero_library, get_zotero_state, add_item_to_device, remove_item_from_device, return_note_to_zotero, set_transfer_status, ZoteroSyncError
+from .services import perform_supernote_sync, SyncInProgressError, get_sync_state, crawl_supernote_directory, archive_file_node, restore_file_node, move_file_node_to_recycle, restore_file_node_from_recycle, empty_file_recycle_bin_item
+from .zotero_service import sync_zotero_library, get_zotero_state, add_item_to_device, remove_item_from_device, move_item_to_recycle_bin, restore_item_from_recycle_bin, empty_recycle_bin_item, return_note_to_zotero, set_transfer_status, ZoteroSyncError
 import os
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 
-def dashboard(request, path=''):
-    """Main dashboard view for browsing files."""
+
+def _file_browser_context(path=''):
     parent = None
     if path:
         parent = get_object_or_404(FileNode, path=path, is_directory=True)
-    
-    # Determine title based on path
+
     if path.startswith('Note'):
         title = 'Notes ✨'
     elif path.startswith('Document'):
@@ -28,10 +27,8 @@ def dashboard(request, path=''):
     else:
         title = 'Explorer ✨'
 
-    # Get children of the current path (or root if parent is None)
-    nodes = FileNode.objects.filter(parent=parent).order_by('is_directory', 'name')
-    
-    # Get breadcrumbs
+    nodes = FileNode.objects.filter(parent=parent, is_recycled=False).order_by('is_directory', 'name')
+
     breadcrumbs = []
     if parent:
         current = parent
@@ -39,19 +36,39 @@ def dashboard(request, path=''):
             breadcrumbs.insert(0, current)
             current = current.parent
 
-    context = {
+    return {
         'nodes': nodes,
         'parent': parent,
         'breadcrumbs': breadcrumbs,
         'current_path': path,
         'title': title,
     }
-    
-    # Check if it's an HTMX request to return only the file list part
+
+
+def dashboard(request, path=''):
+    """Main dashboard view for browsing files."""
+    context = _file_browser_context(path)
+
     if request.htmx:
         return render(request, 'files/partials/file_list.html', context)
-        
+
     return render(request, 'files/dashboard.html', context)
+
+
+def recycle_bin(request):
+    query = request.GET.get('q', '').strip()
+    items = FileNode.objects.filter(is_recycled=True).order_by('-recycled_at', '-updated_at', 'name')
+    if query:
+        items = items.filter(Q(name__icontains=query) | Q(path__icontains=query))
+
+    context = {
+        'items': items,
+        'query': query,
+        'title': 'Recycle Bin',
+    }
+    if request.htmx:
+        return render(request, 'files/partials/recycle_list.html', context)
+    return render(request, 'files/recycle.html', context)
 
 def atelier_dashboard(request):
     """View to display the Atelier Art gallery."""
@@ -67,8 +84,8 @@ def atelier_dashboard(request):
 
     return render(request, 'files/dashboard.html', context)
 
-def _zotero_items_queryset(query=''):
-    items = ZoteroItem.objects.all().order_by('-date_added', '-date_modified', '-synced_at', '-updated_at')
+def _zotero_items_queryset(query='', recycled=False):
+    items = ZoteroItem.objects.filter(is_recycled=recycled).order_by('-date_added', '-date_modified', '-synced_at', '-updated_at')
     if query:
         items = items.filter(Q(title__icontains=query) | Q(attachment_title__icontains=query) | Q(attachment_filename__icontains=query) | Q(abstract_note__icontains=query))
     return items
@@ -76,17 +93,75 @@ def _zotero_items_queryset(query=''):
 
 def zotero_dashboard(request):
     query = request.GET.get('q', '').strip()
-    items = _zotero_items_queryset(query)
+    items = _zotero_items_queryset(query, recycled=False)
 
     context = {
         'items': items,
         'title': 'Zotero Library',
         'query': query,
         'zotero_state': get_zotero_state(),
+        'active_tab': 'library',
     }
     if request.htmx:
         return render(request, 'files/partials/zotero_list.html', context)
     return render(request, 'files/zotero.html', context)
+
+
+def zotero_recycle_bin(request):
+    query = request.GET.get('q', '').strip()
+    items = _zotero_items_queryset(query, recycled=True)
+
+    context = {
+        'items': items,
+        'title': 'Recycle Bin',
+        'query': query,
+        'zotero_state': get_zotero_state(),
+        'active_tab': 'recycle',
+    }
+    if request.htmx:
+        return render(request, 'files/partials/zotero_recycle_list.html', context)
+    return render(request, 'files/zotero.html', context)
+
+
+@require_POST
+def recycle_file_node(request, pk):
+    node = get_object_or_404(FileNode, pk=pk, is_recycled=False)
+    try:
+        move_file_node_to_recycle(node)
+    except Exception as exc:
+        return JsonResponse({'success': False, 'error': str(exc)}, status=500)
+
+    node.refresh_from_db()
+    context = _file_browser_context(node.parent.path if node.parent else '')
+    if request.headers.get('HX-Request') == 'true':
+        return render(request, 'files/partials/file_list.html', context)
+    return JsonResponse({'success': True})
+
+
+@require_POST
+def restore_file_from_recycle(request, pk):
+    node = get_object_or_404(FileNode, pk=pk, is_recycled=True)
+    try:
+        restore_file_node_from_recycle(node)
+    except Exception as exc:
+        return JsonResponse({'success': False, 'error': str(exc)}, status=500)
+
+    if request.headers.get('HX-Request') == 'true':
+        items = FileNode.objects.filter(is_recycled=True).order_by('-recycled_at', '-updated_at', 'name')
+        return render(request, 'files/partials/recycle_list.html', {'items': items, 'query': request.POST.get('q', '').strip(), 'title': 'Recycle Bin'})
+    return JsonResponse({'success': True})
+
+
+@require_POST
+def empty_recycle_bin(request):
+    deleted = 0
+    for node in FileNode.objects.filter(is_recycled=True):
+        empty_file_recycle_bin_item(node)
+        deleted += 1
+    if request.headers.get('HX-Request') == 'true':
+        items = FileNode.objects.filter(is_recycled=True).order_by('-recycled_at', '-updated_at', 'name')
+        return render(request, 'files/partials/recycle_list.html', {'items': items, 'query': request.POST.get('q', '').strip(), 'title': 'Recycle Bin'})
+    return JsonResponse({'success': True, 'deleted': deleted})
 
 
 @require_POST
@@ -174,6 +249,48 @@ def zotero_return_note_submit(request):
         return JsonResponse({'success': False, 'error': 'Invalid Zotero item id'}, status=400)
     return zotero_return_note(request, pk)
 
+
+@require_POST
+def zotero_recycle_item(request, pk):
+    item = get_object_or_404(ZoteroItem, pk=pk, is_recycled=False)
+    try:
+        move_item_to_recycle_bin(item)
+    except Exception as exc:
+        return JsonResponse({'success': False, 'error': str(exc)}, status=500)
+
+    item.refresh_from_db()
+    if request.headers.get('HX-Request') == 'true':
+        items = _zotero_items_queryset(query=request.POST.get('q', '').strip(), recycled=False)
+        return render(request, 'files/partials/zotero_list.html', {'items': items, 'zotero_state': get_zotero_state(), 'active_tab': 'library'})
+    return JsonResponse({'success': True})
+
+
+@require_POST
+def zotero_restore_item(request, pk):
+    item = get_object_or_404(ZoteroItem, pk=pk, is_recycled=True)
+    try:
+        restore_item_from_recycle_bin(item)
+    except Exception as exc:
+        return JsonResponse({'success': False, 'error': str(exc)}, status=500)
+
+    item.refresh_from_db()
+    if request.headers.get('HX-Request') == 'true':
+        items = _zotero_items_queryset(query=request.POST.get('q', '').strip(), recycled=True)
+        return render(request, 'files/partials/zotero_recycle_list.html', {'items': items, 'zotero_state': get_zotero_state(), 'active_tab': 'recycle'})
+    return JsonResponse({'success': True})
+
+
+@require_POST
+def zotero_empty_bin(request):
+    deleted = 0
+    for item in ZoteroItem.objects.filter(is_recycled=True):
+        empty_recycle_bin_item(item)
+        deleted += 1
+    if request.headers.get('HX-Request') == 'true':
+        items = _zotero_items_queryset(recycled=True)
+        return render(request, 'files/partials/zotero_recycle_list.html', {'items': items, 'zotero_state': get_zotero_state(), 'active_tab': 'recycle'})
+    return JsonResponse({'success': True, 'deleted': deleted})
+
 @require_POST
 def trigger_sync(request):
     direction = request.POST.get('direction', 'pull')
@@ -200,6 +317,9 @@ def trigger_sync(request):
 def toggle_archive_status(request, pk):
     """Toggle the archive status and move file if necessary."""
     node = get_object_or_404(FileNode, pk=pk)
+
+    if node.is_recycled:
+        return JsonResponse({'success': False, 'error': 'Restore the item from the recycle bin first.'}, status=400)
 
     new_is_archived = request.POST.get('is_archived') == 'true'
     if node.is_archived == new_is_archived:

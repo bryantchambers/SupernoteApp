@@ -1,0 +1,25 @@
+{% load lucide_icons %}
+<tr class="hover:bg-slate-50 transition duration-150">
+    <td class="p-2 align-top">
+        <div class="font-medium text-slate-800">{{ item.title|default:item.zotero_key }}</div>
+        {% if item.abstract_note %}<div class="text-xs text-slate-500 mt-1 line-clamp-2">{{ item.abstract_note }}</div>{% endif %}
+    </td>
+    <td class="p-2 align-top text-slate-600">
+        <div>{{ item.attachment_title|default:'No attachment cached' }}</div>
+        <div class="text-xs text-slate-400">{{ item.attachment_filename|default:item.attachment_source_label }}</div>
+        <div class="mt-1 inline-flex items-center rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">{{ item.attachment_source_label }}</div>
+    </td>
+    <td class="p-2 align-top text-slate-500">{{ item.date_added|default:item.synced_at|date:"Y-m-d H:i" }}</td>
+    <td class="p-2 align-top">
+        <span class="inline-flex items-center rounded-full bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700">Recycled{% if item.recycled_at %} · {{ item.recycled_at|date:"Y-m-d H:i" }}{% endif %}</span>
+        {% if item.last_transfer_message %}<div class="mt-1 text-xs text-slate-500 max-w-xs">{{ item.last_transfer_message }}</div>{% endif %}
+    </td>
+    <td class="p-2 align-top">
+        <div class="flex justify-center gap-2">
+            <form hx-post="{% url 'files:zotero_restore_item' item.pk %}" hx-target="#zotero-browser" hx-swap="innerHTML">
+                {% csrf_token %}
+                <button type="submit" class="rounded border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-indigo-400 hover:text-indigo-600">Restore</button>
+            </form>
+        </div>
+    </td>
+</tr>

@@ -161,6 +161,8 @@ def sync_zotero_library(limit=100):
                 'attachment_url': attachment_data.get('url', ''),
                 'raw_data': data,
                 'synced_at': timezone.now(),
+                'is_recycled': bool(existing.is_recycled) if existing else False,
+                'recycled_at': existing.recycled_at if existing else None,
                 'is_on_device': preserve_transfer_state,
                 'device_path': existing.device_path if preserve_transfer_state and existing else '',
                 'last_transfer_status': existing.last_transfer_status if preserve_transfer_state and existing else 'idle',
@@ -168,7 +170,7 @@ def sync_zotero_library(limit=100):
             },
         )
 
-    ZoteroItem.objects.exclude(zotero_key__in=seen).delete()
+    ZoteroItem.objects.filter(is_recycled=False).exclude(zotero_key__in=seen).delete()
 
     state.status = 'success'
     state.last_synced_at = timezone.now()
@@ -355,6 +357,35 @@ def remove_item_from_device(item):
     item.last_transfer_message = 'Removed from the device mirror.'
     item.save(update_fields=['device_path', 'is_on_device', 'last_transfer_status', 'last_transfer_message', 'updated_at'])
     return {'removed': True}
+
+
+def move_item_to_recycle_bin(item):
+    if item.is_on_device:
+        remove_item_from_device(item)
+    item.is_recycled = True
+    item.recycled_at = timezone.now()
+    item.last_transfer_status = 'recycled'
+    item.last_transfer_message = 'Moved to recycle bin.'
+    item.save(update_fields=['is_recycled', 'recycled_at', 'last_transfer_status', 'last_transfer_message', 'updated_at'])
+    return {'recycled': True}
+
+
+def restore_item_from_recycle_bin(item):
+    item.is_recycled = False
+    item.recycled_at = None
+    item.last_transfer_status = 'idle'
+    item.last_transfer_message = ''
+    item.save(update_fields=['is_recycled', 'recycled_at', 'last_transfer_status', 'last_transfer_message', 'updated_at'])
+    return {'restored': True}
+
+
+def empty_recycle_bin_item(item):
+    if item.device_path:
+        device_path = Path(settings.SUPERNOTE_SOURCE) / item.device_path if not Path(item.device_path).is_absolute() else Path(item.device_path)
+        if device_path.exists():
+            device_path.unlink()
+    item.delete()
+    return {'deleted': True}
 
 
 def return_note_to_zotero(item, note_text):
