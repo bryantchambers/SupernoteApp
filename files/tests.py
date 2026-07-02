@@ -10,11 +10,12 @@ from django.test import RequestFactory, TestCase, override_settings
 from supernote_project import settings as project_settings
 from django.utils import timezone
 
-from .models import ArchiveRecord, FileNode, SyncState, ZoteroItem, ZoteroSyncState
+from .models import ArchiveRecord, FileNode, PeriodicalIssue, PeriodicalRecipe, SyncState, ZoteroItem, ZoteroSyncState
 from .services import crawl_supernote_directory, perform_supernote_sync
 from .ai_service import AIService
-from .views import toggle_archive_status, trigger_sync, process_with_ai, recycle_file_node, restore_file_from_recycle, empty_recycle_bin, zotero_add_to_device, zotero_remove_from_device, zotero_return_note_submit, zotero_recycle_item, zotero_restore_item, zotero_empty_bin, zotero_recycle_bin
+from .views import toggle_archive_status, trigger_sync, process_with_ai, recycle_file_node, restore_file_from_recycle, empty_recycle_bin, zotero_add_to_device, zotero_remove_from_device, zotero_return_note_submit, zotero_recycle_item, zotero_restore_item, zotero_empty_bin, zotero_recycle_bin, periodical_fetch_now
 from .zotero_service import sync_zotero_library, add_item_to_device, remove_item_from_device, move_item_to_recycle_bin, restore_item_from_recycle_bin, empty_recycle_bin_item, return_note_to_zotero, ZoteroSyncError
+from .periodical_service import fetch_periodical, send_issue_to_device, remove_issue_from_device, seed_curated_recipes, PeriodicalError
 
 
 class SupernoteSyncTests(TestCase):
@@ -742,3 +743,132 @@ class ZoteroIntegrationTests(TestCase):
                 sync_zotero_library()
 
         self.assertTrue(ZoteroItem.objects.filter(zotero_key='REC111', is_recycled=True).exists())
+
+
+
+class PeriodicalIntegrationTests(TestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+        self.source_tmp = tempfile.TemporaryDirectory()
+        self.archive_tmp = tempfile.TemporaryDirectory()
+        self.source = Path(self.source_tmp.name)
+        self.archive_dir = Path(self.archive_tmp.name)
+        (self.source / 'Document' / 'News').mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self):
+        self.source_tmp.cleanup()
+        self.archive_tmp.cleanup()
+
+    def _recipe(self):
+        recipe_path = self.archive_dir / 'recipes' / 'sample.recipe'
+        recipe_path.parent.mkdir(parents=True, exist_ok=True)
+        recipe_path.write_text('recipe body', encoding='utf-8')
+        return PeriodicalRecipe.objects.create(
+            slug='sample-news',
+            title='Sample News',
+            recipe_path=str(recipe_path),
+            enabled=True,
+            renew_interval_days=1,
+            retention_days=7,
+        )
+
+    def test_seed_curated_recipes_creates_catalog(self):
+        seed_curated_recipes()
+        self.assertGreaterEqual(PeriodicalRecipe.objects.count(), 7)
+        self.assertTrue(PeriodicalRecipe.objects.filter(slug='bbc-news').exists())
+
+    def test_fetch_periodical_runs_ebook_convert_and_creates_issue(self):
+        recipe = self._recipe()
+
+        def fake_run(command, capture_output=True, text=True, timeout=900):
+            output_path = Path(command[2])
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b'epub bytes')
+            return MagicMock(returncode=0, stdout='ok', stderr='')
+
+        with override_settings(
+            PERIODICAL_ARCHIVE_DIR=self.archive_dir,
+            PERIODICAL_RECIPE_DIR=self.archive_dir / 'recipes',
+            PERIODICAL_DEVICE_DIR=self.source / 'Document' / 'News',
+            SUPERNOTE_SOURCE=self.source,
+        ):
+            with patch('files.periodical_service.subprocess.run', side_effect=fake_run) as run_mock:
+                issue = fetch_periodical(recipe)
+
+        recipe.refresh_from_db()
+        issue.refresh_from_db()
+        self.assertEqual(recipe.last_status, 'success')
+        self.assertEqual(issue.output_format, 'epub')
+        self.assertEqual(issue.status, 'on_device')
+        self.assertTrue((self.archive_dir / issue.archive_path).exists())
+        self.assertTrue((self.source / issue.device_path).exists())
+        command = run_mock.call_args.args[0]
+        self.assertEqual(command[0], 'ebook-convert')
+        self.assertIn('--output-profile', command)
+        self.assertIn('generic_eink', command)
+
+    def test_fetch_periodical_surfaces_missing_calibre(self):
+        recipe = self._recipe()
+        with override_settings(PERIODICAL_ARCHIVE_DIR=self.archive_dir, PERIODICAL_RECIPE_DIR=self.archive_dir / 'recipes', CALIBRE_EBOOK_CONVERT='missing-ebook-convert'):
+            with patch('files.periodical_service.subprocess.run', side_effect=FileNotFoundError()):
+                with self.assertRaises(PeriodicalError):
+                    fetch_periodical(recipe)
+
+        recipe.refresh_from_db()
+        self.assertEqual(recipe.last_status, 'missing_calibre')
+        self.assertIn('ebook-convert was not found', recipe.last_message)
+
+    def test_periodical_fetch_now_pushes_sync_after_success(self):
+        recipe = self._recipe()
+
+        def fake_run(command, capture_output=True, text=True, timeout=900):
+            output_path = Path(command[2])
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b'epub bytes')
+            return MagicMock(returncode=0, stdout='ok', stderr='')
+
+        with override_settings(
+            PERIODICAL_ARCHIVE_DIR=self.archive_dir,
+            PERIODICAL_RECIPE_DIR=self.archive_dir / 'recipes',
+            PERIODICAL_DEVICE_DIR=self.source / 'Document' / 'News',
+            SUPERNOTE_SOURCE=self.source,
+        ):
+            with patch('files.views.fetch_periodical') as fetch_mock:
+                with patch('files.views.perform_supernote_sync') as sync_mock:
+                    fetch_mock.side_effect = lambda recipe, debug=False: fake_run(['ebook-convert', 'a', 'b'])
+                    request = self.factory.post(f'/periodicals/recipe/{recipe.pk}/fetch/')
+                    response = periodical_fetch_now(request, recipe.pk)
+
+        self.assertEqual(response.status_code, 200)
+        sync_mock.assert_called_once_with(direction='push', rescan=True)
+
+    def test_send_and_remove_issue_updates_device_copy(self):
+        recipe = self._recipe()
+        issue_file = self.archive_dir / 'issues' / 'sample-news' / 'sample.epub'
+        issue_file.parent.mkdir(parents=True, exist_ok=True)
+        issue_file.write_bytes(b'epub bytes')
+        issue = PeriodicalIssue.objects.create(
+            recipe=recipe,
+            title='Sample News - 2026-07-02',
+            archive_path='issues/sample-news/sample.epub',
+            output_format='epub',
+        )
+
+        with override_settings(SUPERNOTE_SOURCE=self.source, PERIODICAL_ARCHIVE_DIR=self.archive_dir, PERIODICAL_DEVICE_DIR=self.source / 'Document' / 'News'):
+            send_issue_to_device(issue)
+            issue.refresh_from_db()
+            device_path = self.source / issue.device_path
+            self.assertTrue(device_path.exists())
+            self.assertTrue(issue.is_on_device)
+            remove_issue_from_device(issue)
+
+        issue.refresh_from_db()
+        self.assertFalse(issue.is_on_device)
+        self.assertFalse(device_path.exists())
+
+    def test_periodicals_dashboard_renders_catalog(self):
+        seed_curated_recipes()
+        response = self.client.get('/periodicals/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Periodicals')
+        self.assertContains(response, 'BBC News')

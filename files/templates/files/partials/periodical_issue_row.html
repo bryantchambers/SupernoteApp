@@ -1,0 +1,47 @@
+{% load lucide_icons %}
+<tr class="hover:bg-slate-50 transition duration-150">
+    <td class="p-2 align-top">
+        <div class="font-medium text-slate-800">{{ issue.title }}</div>
+        <div class="text-xs text-slate-400 mt-1">{{ issue.recipe.title }} · {{ issue.output_format|upper }}</div>
+        {% if issue.status_message %}<div class="text-xs text-slate-500 mt-1 max-w-lg line-clamp-2">{{ issue.status_message }}</div>{% endif %}
+    </td>
+    <td class="p-2 align-top text-slate-500">{{ issue.fetched_at|date:"Y-m-d H:i" }}</td>
+    <td class="p-2 align-top">
+        {% if issue.is_on_device %}
+        <span class="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">On device</span>
+        <div class="text-xs text-slate-400 mt-1">{{ issue.device_path }}</div>
+        {% elif issue.status_tone == 'error' %}
+        <span class="inline-flex items-center rounded-full bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700">{{ issue.status }}</span>
+        {% else %}
+        <span class="inline-flex items-center rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">Server only</span>
+        {% endif %}
+    </td>
+    <td class="p-2 align-top">
+        <div class="flex justify-center gap-2">
+            <a href="{% url 'files:periodical_download_issue' issue.pk %}" class="text-slate-400 hover:text-indigo-500 transition duration-150" title="Download issue">
+                {% icon "download" "w-5 h-5" %}
+            </a>
+            {% if issue.is_on_device %}
+            <form hx-post="{% url 'files:periodical_remove_issue' issue.pk %}" hx-target="#periodicals-browser" hx-swap="innerHTML">
+                {% csrf_token %}
+                <button class="text-slate-400 hover:text-indigo-500 transition duration-150" title="Remove from device" type="submit">
+                    {% icon "minus" "w-5 h-5" %}
+                </button>
+            </form>
+            {% else %}
+            <form hx-post="{% url 'files:periodical_send_issue' issue.pk %}" hx-target="#periodicals-browser" hx-swap="innerHTML">
+                {% csrf_token %}
+                <button class="text-slate-400 hover:text-indigo-500 transition duration-150" title="Send to device" type="submit">
+                    {% icon "send" "w-5 h-5" %}
+                </button>
+            </form>
+            {% endif %}
+            <form hx-post="{% url 'files:periodical_delete_issue' issue.pk %}" hx-target="#periodicals-browser" hx-swap="innerHTML">
+                {% csrf_token %}
+                <button class="text-slate-400 hover:text-rose-500 transition duration-150" title="Delete issue" type="submit">
+                    {% icon "trash-2" "w-5 h-5" %}
+                </button>
+            </form>
+        </div>
+    </td>
+</tr>

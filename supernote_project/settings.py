@@ -128,6 +128,13 @@ KOOFR_BASE_URL = os.environ.get("KOOFR_BASE_URL", "https://app.koofr.net/dav/Koo
 KOOFR_USER_NAME = os.environ.get("KOOFR_USER_NAME", "")
 KOOFR_TOKEN = os.environ.get("KOOFR_TOKEN", "")
 
+# Periodicals Configuration
+PERIODICAL_DEVICE_DIR = BASE_DIR / "Supernote" / "Document" / "News"
+PERIODICAL_ARCHIVE_DIR = ARCHIVE_DIR / "periodicals"
+PERIODICAL_RECIPE_DIR = PERIODICAL_ARCHIVE_DIR / "recipes"
+CALIBRE_EBOOK_CONVERT = os.environ.get("CALIBRE_EBOOK_CONVERT", "ebook-convert")
+PERIODICAL_OUTPUT_FORMAT = os.environ.get("PERIODICAL_OUTPUT_FORMAT", "epub")
+
 # AI Configuration
 GOOGLE_GENAI_API_KEY = (
     os.environ.get("GOOGLE_GENAI_API_KEY")

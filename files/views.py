@@ -1,14 +1,15 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.db.models import Q
 from django.views.decorators.http import require_POST
-from django.http import JsonResponse, HttpResponse
+from django.http import FileResponse, JsonResponse, HttpResponse
 from django.conf import settings
-from .models import FileNode, ZoteroItem
+from .models import FileNode, PeriodicalIssue, PeriodicalRecipe, ZoteroItem
 from .utils import SuperNoteUtility
 from .atelier_utils import AtelierUtility
 from .ai_service import AIService
 from .services import perform_supernote_sync, SyncInProgressError, get_sync_state, crawl_supernote_directory, archive_file_node, restore_file_node, move_file_node_to_recycle, restore_file_node_from_recycle, empty_file_recycle_bin_item
 from .zotero_service import sync_zotero_library, get_zotero_state, add_item_to_device, remove_item_from_device, move_item_to_recycle_bin, restore_item_from_recycle_bin, empty_recycle_bin_item, return_note_to_zotero, set_transfer_status, ZoteroSyncError
+from .periodical_service import delete_issue, fetch_periodical, remove_issue_from_device, seed_curated_recipes, send_issue_to_device, update_recipe, PeriodicalError
 import os
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 
@@ -121,6 +122,140 @@ def zotero_recycle_bin(request):
     if request.htmx:
         return render(request, 'files/partials/zotero_recycle_list.html', context)
     return render(request, 'files/zotero.html', context)
+
+
+def _periodical_context(query=''):
+    if not PeriodicalRecipe.objects.exists():
+        seed_curated_recipes()
+
+    recipes = PeriodicalRecipe.objects.all().order_by('title')
+    if query:
+        recipes = recipes.filter(Q(title__icontains=query) | Q(slug__icontains=query))
+
+    recipes = list(recipes)
+    for recipe in recipes:
+        recipe.latest_issue = recipe.issues.order_by('-fetched_at').first()
+
+    return {
+        'recipes': recipes,
+        'issues': PeriodicalIssue.objects.select_related('recipe').order_by('-fetched_at')[:50],
+        'query': query,
+        'title': 'Periodicals',
+    }
+
+
+def periodicals_dashboard(request):
+    query = request.GET.get('q', '').strip()
+    context = _periodical_context(query=query)
+    if request.htmx:
+        return render(request, 'files/partials/periodical_list.html', context)
+    return render(request, 'files/periodicals.html', context)
+
+
+def _periodical_partial(request, query=''):
+    return render(request, 'files/partials/periodical_list.html', _periodical_context(query=query))
+
+
+@require_POST
+def periodicals_seed(request):
+    seed_curated_recipes()
+    return _periodical_partial(request, query=request.POST.get('q', '').strip())
+
+
+@require_POST
+def periodical_update_settings(request, pk):
+    recipe = get_object_or_404(PeriodicalRecipe, pk=pk)
+    try:
+        recipe.renew_interval_days = max(1, int(request.POST.get('renew_interval_days', recipe.renew_interval_days)))
+        recipe.retention_days = max(1, int(request.POST.get('retention_days', recipe.retention_days)))
+    except ValueError:
+        recipe.last_status = 'error'
+        recipe.last_message = 'Renewal and retention must be whole numbers.'
+    else:
+        recipe.enabled = request.POST.get('enabled') == 'on'
+        recipe.username_env = request.POST.get('username_env', '').strip()
+        recipe.password_env = request.POST.get('password_env', '').strip()
+        recipe.last_message = 'Settings saved.'
+        if recipe.last_status in {'error', 'fetch_failed'}:
+            recipe.last_status = 'idle'
+    recipe.save()
+    return _periodical_partial(request, query=request.POST.get('q', '').strip())
+
+
+@require_POST
+def periodical_update_recipe(request, pk):
+    recipe = get_object_or_404(PeriodicalRecipe, pk=pk)
+    try:
+        update_recipe(recipe)
+    except Exception as exc:
+        recipe.last_status = 'error'
+        recipe.last_message = str(exc)
+        recipe.save(update_fields=['last_status', 'last_message', 'updated_at'])
+    return _periodical_partial(request, query=request.POST.get('q', '').strip())
+
+
+@require_POST
+def periodical_fetch_now(request, pk):
+    recipe = get_object_or_404(PeriodicalRecipe, pk=pk)
+    try:
+        fetch_periodical(recipe, debug=request.POST.get('debug') == 'true')
+        perform_supernote_sync(direction='push', rescan=True)
+    except Exception as exc:
+        if recipe.last_status not in {'missing_calibre', 'fetch_failed'}:
+            recipe.last_status = 'error'
+        recipe.last_message = str(exc)
+        recipe.save(update_fields=['last_status', 'last_message', 'updated_at'])
+    return _periodical_partial(request, query=request.POST.get('q', '').strip())
+
+
+@require_POST
+def periodical_send_issue(request, pk):
+    issue = get_object_or_404(PeriodicalIssue, pk=pk)
+    try:
+        send_issue_to_device(issue)
+        perform_supernote_sync(direction='push', rescan=True)
+        issue.status_message = 'Copied to Supernote News folder and sync pushed.'
+        issue.save(update_fields=['status_message', 'updated_at'])
+    except Exception as exc:
+        issue.status = 'error'
+        issue.status_message = str(exc)
+        issue.save(update_fields=['status', 'status_message', 'updated_at'])
+    return _periodical_partial(request, query=request.POST.get('q', '').strip())
+
+
+@require_POST
+def periodical_remove_issue(request, pk):
+    issue = get_object_or_404(PeriodicalIssue, pk=pk)
+    try:
+        remove_issue_from_device(issue)
+        perform_supernote_sync(direction='push', rescan=True)
+        issue.status_message = 'Removed from Supernote News folder and sync pushed.'
+        issue.save(update_fields=['status_message', 'updated_at'])
+    except Exception as exc:
+        issue.status = 'error'
+        issue.status_message = str(exc)
+        issue.save(update_fields=['status', 'status_message', 'updated_at'])
+    return _periodical_partial(request, query=request.POST.get('q', '').strip())
+
+
+@require_POST
+def periodical_delete_issue(request, pk):
+    issue = get_object_or_404(PeriodicalIssue, pk=pk)
+    try:
+        delete_issue(issue)
+    except Exception as exc:
+        issue.status = 'error'
+        issue.status_message = str(exc)
+        issue.save(update_fields=['status', 'status_message', 'updated_at'])
+    return _periodical_partial(request, query=request.POST.get('q', '').strip())
+
+
+def periodical_download_issue(request, pk):
+    issue = get_object_or_404(PeriodicalIssue, pk=pk)
+    path = os.path.join(settings.PERIODICAL_ARCHIVE_DIR, issue.archive_path)
+    if not os.path.exists(path):
+        return HttpResponse('Issue file not found', status=404)
+    return FileResponse(open(path, 'rb'), as_attachment=True, filename=os.path.basename(path))
 
 
 @require_POST

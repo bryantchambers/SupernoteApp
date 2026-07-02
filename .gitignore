@@ -3,3 +3,8 @@ SUPERNOTE_DEVELOPMENT_COPY/
 Supernote/
 db.sqlite3
 test_genai.py
+
+ARCHIVE/
+__pycache__/
+*.pyc
+b

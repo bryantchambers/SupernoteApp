@@ -1,0 +1,62 @@
+{% load lucide_icons %}
+<tr class="hover:bg-slate-50 transition duration-150">
+    <td class="p-2 align-top">
+        <div class="font-medium text-slate-800">{{ recipe.title }}</div>
+        <div class="text-xs text-slate-400 mt-1">{{ recipe.slug }}</div>
+        {% if recipe.recipe_path %}<div class="text-xs text-slate-400 mt-1 truncate max-w-xs">{{ recipe.recipe_path }}</div>{% endif %}
+    </td>
+    <td class="p-2 align-top text-slate-600">
+        <form hx-post="{% url 'files:periodical_update_settings' recipe.pk %}" hx-target="#periodicals-browser" hx-swap="innerHTML" class="grid grid-cols-2 gap-2 min-w-64">
+            {% csrf_token %}
+            <label class="inline-flex items-center gap-2 col-span-2 text-xs text-slate-600">
+                <input type="checkbox" name="enabled" class="rounded border-slate-300 text-indigo-600" {% if recipe.enabled %}checked{% endif %}>
+                <span>Enabled</span>
+            </label>
+            <label class="text-xs text-slate-500">Renew days
+                <input type="number" min="1" name="renew_interval_days" value="{{ recipe.renew_interval_days }}" class="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm">
+            </label>
+            <label class="text-xs text-slate-500">Keep days
+                <input type="number" min="1" name="retention_days" value="{{ recipe.retention_days }}" class="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm">
+            </label>
+            <input type="text" name="username_env" value="{{ recipe.username_env }}" placeholder="username env" class="col-span-1 rounded border border-slate-300 px-2 py-1 text-xs">
+            <input type="text" name="password_env" value="{{ recipe.password_env }}" placeholder="password env" class="col-span-1 rounded border border-slate-300 px-2 py-1 text-xs">
+            <button type="submit" class="col-span-2 inline-flex items-center justify-center rounded bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-200">Save</button>
+        </form>
+    </td>
+    <td class="p-2 align-top text-slate-600">
+        {% if recipe.latest_issue %}
+            <div>{{ recipe.latest_issue.title }}</div>
+            <div class="text-xs text-slate-400">{{ recipe.latest_issue.fetched_at|date:"Y-m-d H:i" }}</div>
+        {% else %}
+            <span class="text-slate-400">No issue</span>
+        {% endif %}
+    </td>
+    <td class="p-2 align-top">
+        {% if recipe.status_tone == 'success' %}
+        <span class="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">{{ recipe.last_status|default:'idle' }}</span>
+        {% elif recipe.status_tone == 'error' %}
+        <span class="inline-flex items-center rounded-full bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700">{{ recipe.last_status|default:'idle' }}</span>
+        {% elif recipe.status_tone == 'running' %}
+        <span class="inline-flex items-center rounded-full bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">running</span>
+        {% else %}
+        <span class="inline-flex items-center rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">{{ recipe.last_status|default:'idle' }}</span>
+        {% endif %}
+        {% if recipe.last_message %}<div class="mt-1 text-xs text-slate-500 max-w-sm line-clamp-3">{{ recipe.last_message }}</div>{% endif %}
+    </td>
+    <td class="p-2 align-top">
+        <div class="flex justify-center gap-2">
+            <form hx-post="{% url 'files:periodical_fetch_now' recipe.pk %}" hx-target="#periodicals-browser" hx-swap="innerHTML">
+                {% csrf_token %}
+                <button class="text-slate-400 hover:text-indigo-500 transition duration-150" title="Fetch now" type="submit">
+                    {% icon "download" "w-5 h-5" %}
+                </button>
+            </form>
+            <form hx-post="{% url 'files:periodical_update_recipe' recipe.pk %}" hx-target="#periodicals-browser" hx-swap="innerHTML">
+                {% csrf_token %}
+                <button class="text-slate-400 hover:text-indigo-500 transition duration-150" title="Update recipe" type="submit">
+                    {% icon "refresh-cw" "w-5 h-5" %}
+                </button>
+            </form>
+        </div>
+    </td>
+</tr>

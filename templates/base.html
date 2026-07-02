@@ -93,6 +93,14 @@
                             </a>
                         </li>
                         {% endif %}
+                        <li class="px-3 py-2 rounded-sm mb-0.5 last:mb-0 {% if request.path == '/periodicals/' %}bg-slate-800{% endif %}">
+                            <a class="block text-slate-200 hover:text-white truncate transition duration-150" href="/periodicals/">
+                                <div class="flex items-center">
+                                    {% icon "newspaper" "shrink-0 h-6 w-6 text-amber-500" %}
+                                    <span class="text-sm font-medium ml-3 lg:hidden lg:sidebar-expanded:block">Periodicals</span>
+                                </div>
+                            </a>
+                        </li>
                         <li class="px-3 py-2 rounded-sm mb-0.5 last:mb-0 {% if request.path == '/zotero/' %}bg-slate-800{% endif %}">
                             <a class="block text-slate-200 hover:text-white truncate transition duration-150" href="/zotero/">
                                 <div class="flex items-center">

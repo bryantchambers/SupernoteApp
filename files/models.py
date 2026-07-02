@@ -163,3 +163,78 @@ class ZoteroItem(models.Model):
         if self.last_transfer_status in {'missing_remote', 'unresolved_linked', 'sync_failed', 'error'}:
             return 'error'
         return 'neutral'
+
+
+
+class PeriodicalRecipe(models.Model):
+    slug = models.SlugField(max_length=128, unique=True)
+    title = models.CharField(max_length=255)
+    recipe_url = models.URLField(max_length=1024, blank=True, default='')
+    recipe_path = models.CharField(max_length=1024, blank=True, default='')
+    enabled = models.BooleanField(default=False)
+    renew_interval_days = models.PositiveIntegerField(default=7)
+    retention_days = models.PositiveIntegerField(default=14)
+    username_env = models.CharField(max_length=128, blank=True, default='')
+    password_env = models.CharField(max_length=128, blank=True, default='')
+    last_fetched_at = models.DateTimeField(null=True, blank=True)
+    last_checked_at = models.DateTimeField(null=True, blank=True)
+    last_status = models.CharField(max_length=32, blank=True, default='idle')
+    last_message = models.TextField(blank=True, default='')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['title']
+
+    def __str__(self):
+        return self.title
+
+    @property
+    def cadence_label(self):
+        if self.renew_interval_days == 1:
+            return 'Daily'
+        if self.renew_interval_days == 7:
+            return 'Weekly'
+        if self.renew_interval_days in {28, 30, 31}:
+            return 'Monthly'
+        return f'Every {self.renew_interval_days} days'
+
+    @property
+    def status_tone(self):
+        if self.last_status in {'success', 'ready'}:
+            return 'success'
+        if self.last_status in {'error', 'fetch_failed', 'missing_calibre'}:
+            return 'error'
+        if self.last_status == 'running':
+            return 'running'
+        return 'neutral'
+
+
+class PeriodicalIssue(models.Model):
+    recipe = models.ForeignKey(PeriodicalRecipe, on_delete=models.CASCADE, related_name='issues')
+    title = models.CharField(max_length=512)
+    issue_date = models.DateField(null=True, blank=True)
+    output_format = models.CharField(max_length=16, default='epub')
+    archive_path = models.CharField(max_length=1024)
+    debug_path = models.CharField(max_length=1024, blank=True, default='')
+    device_path = models.CharField(max_length=1024, blank=True, default='')
+    status = models.CharField(max_length=32, default='ready')
+    status_message = models.TextField(blank=True, default='')
+    is_on_device = models.BooleanField(default=False)
+    is_pinned = models.BooleanField(default=False)
+    fetched_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-fetched_at']
+
+    def __str__(self):
+        return self.title
+
+    @property
+    def status_tone(self):
+        if self.status in {'ready', 'on_device'}:
+            return 'success'
+        if self.status in {'error', 'missing'}:
+            return 'error'
+        return 'neutral'
