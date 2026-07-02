@@ -11,6 +11,7 @@ urlpatterns = [
     path('zotero/add/<int:pk>/', views.zotero_add_to_device, name='zotero_add_to_device'),
     path('zotero/remove/<int:pk>/', views.zotero_remove_from_device, name='zotero_remove_from_device'),
     path('zotero/return/<int:pk>/', views.zotero_return_note, name='zotero_return_note'),
+    path('zotero/return/', views.zotero_return_note_submit, name='zotero_return_note_submit'),
     path('upload/', views.upload_file, name='upload_file'),
     path('sync/', views.trigger_sync, name='trigger_sync'),
     path('toggle-archive/<int:pk>/', views.toggle_archive_status, name='toggle_archive'),

@@ -7,7 +7,7 @@
 <div class="sm:flex sm:justify-between sm:items-center mb-8">
     <div class="mb-4 sm:mb-0">
         <h1 class="text-2xl md:text-3xl text-slate-800 font-bold">{{ title }}</h1>
-        <p class="text-sm text-slate-500 mt-1">Synced papers and device handoff.</p>
+        <p class="text-sm text-slate-500 mt-1">100 most recently added references with visible device transfer status.</p>
     </div>
     <div class="flex items-center gap-3">
         <form class="flex items-center gap-2" hx-post="{% url 'files:zotero_sync' %}" hx-target="#zotero-status" hx-swap="outerHTML">
@@ -51,8 +51,9 @@
                 </button>
             </div>
             <h3 class="text-lg font-medium text-slate-900 mb-4" x-text="'Return Note: ' + title"></h3>
-            <form hx-post="{% url 'files:zotero_return_note' 0 %}" hx-target="#zotero-browser" hx-swap="innerHTML" x-bind:hx-post="'/zotero/return/' + pk + '/'" @htmx:after-request.window="if ($event.detail.target && $event.detail.target.id === 'zotero-browser') { open = false; }">
+            <form hx-post="{% url 'files:zotero_return_note_submit' %}" hx-target="#zotero-browser" hx-swap="innerHTML" @htmx:after-request.window="if ($event.detail.target && $event.detail.target.id === 'zotero-browser') { open = false; }">
                 {% csrf_token %}
+                <input type="hidden" name="pk" x-bind:value="pk">
                 <textarea name="note_text" x-model="noteText" class="w-full h-48 p-3 border border-slate-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500" placeholder="Write a note to send back to Zotero..."></textarea>
                 <div class="mt-4 flex justify-end gap-2">
                     <button type="button" @click="open = false" class="px-4 py-2 rounded border border-slate-300 text-sm text-slate-700">Cancel</button>

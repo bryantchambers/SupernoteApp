@@ -1,10 +1,14 @@
 import os
 import glob
+import logging
 from google import genai
 from google.genai import types
 from django.conf import settings
 from .models import FileNode, ProcessedNote, NoteAsset
 from .utils import SuperNoteUtility
+
+logger = logging.getLogger(__name__)
+
 
 class AIService:
     @staticmethod
@@ -14,27 +18,35 @@ class AIService:
         
         # 1. Export note pages to images
         temp_img_dir = os.path.join(settings.ARCHIVE_DIR, "temp_images", str(file_node.id))
-        SuperNoteUtility.convert_note_to_images(input_path, temp_img_dir)
-        
+        converted = SuperNoteUtility.convert_note_to_images(input_path, temp_img_dir)
+        if not converted:
+            raise RuntimeError(f'Failed to render note pages to PNG images: {input_path}')
+
         # 2. Get list of images
         images = sorted(glob.glob(os.path.join(temp_img_dir, "*.png")))
         if not images:
-            return None
+            raise RuntimeError(f'No page images were generated for: {input_path}')
+
+        api_key = settings.GOOGLE_GENAI_API_KEY
+        if not api_key:
+            raise ValueError('Gemini API key is not configured.')
 
         # 3. Initialize Gemini Client
-        client = genai.Client(api_key=settings.GOOGLE_GENAI_API_KEY)
+        client = genai.Client(api_key=api_key)
         
         # 4. Prepare Prompt
         prompt = """
-        You are an expert at converting handwritten notes into structured Markdown.
-        Below are images of several pages from a SuperNote e-ink tablet.
-        
-        Please convert the handwriting into a high-quality Markdown document following these rules:
-        1. Convert all handwriting to accurate text.
-        2. Identify any workflows, cycles, or Directed Acyclic Graphs (DAGs) and render them using raw Mermaid.js syntax blocks.
-        3. Identify any tables and render them as standard Markdown tables.
-        4. If a part of the image looks like a specific graph or detailed drawing that cannot be easily converted to text/mermaid, please indicate where it is with a placeholder like '![[asset_placeholder_X.png]]'.
-        5. Output ONLY the final Markdown content.
+        You are converting handwritten Supernote pages into structured Markdown.
+        Preserve the document structure as faithfully as possible.
+
+        Output rules:
+        1. Reconstruct heading levels using Markdown headings (`#`, `##`, `###`) when the page layout indicates section structure.
+        2. Preserve bullet lists, numbered lists, emphasis, and paragraph breaks.
+        3. Convert tables into valid Markdown tables.
+        4. Convert workflows, diagrams, dependency chains, and DAG-like sketches into Mermaid code blocks when a Mermaid representation is clearer than a literal image.
+        5. If a sketch, chart, or figure is better represented as an image, keep it as an embedded asset reference using Obsidian-style embeds such as `![[figure_name.png]]` and annotate it with a short caption in Markdown.
+        6. Do not add commentary outside the Markdown document.
+        7. Output only the final Markdown content.
         """
         
         # 5. Call Gemini 2.5 Flash
@@ -46,12 +58,14 @@ class AIService:
         
         try:
             response = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model=settings.GOOGLE_GENAI_MODEL,
                 contents=content_parts
             )
-            
+
             markdown_content = response.text
-            
+            if not markdown_content:
+                raise RuntimeError('Gemini returned an empty Markdown response.')
+
             # 6. Save to Database
             processed_note, created = ProcessedNote.objects.update_or_create(
                 file_node=file_node,
@@ -60,9 +74,9 @@ class AIService:
                     'last_processed_hash': file_node.hash
                 }
             )
-            
+
             return processed_note
-            
-        except Exception as e:
-            print(f"AI Processing failed: {e}")
-            return None
+
+        except Exception:
+            logger.exception('AI processing failed for file_node_id=%s', file_node_id)
+            raise

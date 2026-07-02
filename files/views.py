@@ -8,7 +8,7 @@ from .utils import SuperNoteUtility
 from .atelier_utils import AtelierUtility
 from .ai_service import AIService
 from .services import perform_supernote_sync, SyncInProgressError, get_sync_state, crawl_supernote_directory, archive_file_node, restore_file_node
-from .zotero_service import sync_zotero_library, get_zotero_state, add_item_to_device, remove_item_from_device, return_note_to_zotero, ZoteroSyncError
+from .zotero_service import sync_zotero_library, get_zotero_state, add_item_to_device, remove_item_from_device, return_note_to_zotero, set_transfer_status, ZoteroSyncError
 import os
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 
@@ -67,11 +67,16 @@ def atelier_dashboard(request):
 
     return render(request, 'files/dashboard.html', context)
 
-def zotero_dashboard(request):
-    query = request.GET.get('q', '').strip()
-    items = ZoteroItem.objects.all().order_by('-synced_at', '-updated_at')
+def _zotero_items_queryset(query=''):
+    items = ZoteroItem.objects.all().order_by('-date_added', '-date_modified', '-synced_at', '-updated_at')
     if query:
         items = items.filter(Q(title__icontains=query) | Q(attachment_title__icontains=query) | Q(attachment_filename__icontains=query) | Q(abstract_note__icontains=query))
+    return items
+
+
+def zotero_dashboard(request):
+    query = request.GET.get('q', '').strip()
+    items = _zotero_items_queryset(query)
 
     context = {
         'items': items,
@@ -108,27 +113,42 @@ def zotero_add_to_device(request, pk):
     item = get_object_or_404(ZoteroItem, pk=pk)
     try:
         result = add_item_to_device(item)
-        crawl_supernote_directory()
+        perform_supernote_sync(direction='push', rescan=True)
+        set_transfer_status(item, 'success', f"{result['source_label']} copied to Supernote and sync pushed.")
     except ZoteroSyncError as exc:
-        return JsonResponse({'success': False, 'error': str(exc)}, status=400)
+        status = 'missing_remote' if 'not found' in str(exc).lower() else 'unresolved_linked' if 'cannot resolve a remote file url' in str(exc).lower() else 'error'
+        set_transfer_status(item, status, str(exc))
+    except Exception as exc:
+        set_transfer_status(item, 'sync_failed', f'Supernote sync failed: {exc}')
 
+    item.refresh_from_db()
     if request.headers.get('HX-Request') == 'true':
         return render(request, 'files/partials/zotero_row.html', {'item': item})
-    payload = {'success': True}
-    payload.update(result)
-    return JsonResponse(payload)
+    if item.last_transfer_status == 'success':
+        payload = {'success': True}
+        payload.update(result)
+        return JsonResponse(payload)
+    return JsonResponse({'success': False, 'error': item.last_transfer_message}, status=400)
 
 
 @require_POST
 def zotero_remove_from_device(request, pk):
     item = get_object_or_404(ZoteroItem, pk=pk)
-    result = remove_item_from_device(item)
-    crawl_supernote_directory()
+    try:
+        result = remove_item_from_device(item)
+        perform_supernote_sync(direction='push', rescan=True)
+        set_transfer_status(item, 'removed', 'Removed from the device mirror and sync pushed.')
+    except Exception as exc:
+        set_transfer_status(item, 'sync_failed', f'Supernote sync failed: {exc}')
+
+    item.refresh_from_db()
     if request.headers.get('HX-Request') == 'true':
         return render(request, 'files/partials/zotero_row.html', {'item': item})
-    payload = {'success': True}
-    payload.update(result)
-    return JsonResponse(payload)
+    if item.last_transfer_status == 'removed':
+        payload = {'success': True}
+        payload.update(result)
+        return JsonResponse(payload)
+    return JsonResponse({'success': False, 'error': item.last_transfer_message}, status=500)
 
 
 @require_POST
@@ -141,9 +161,18 @@ def zotero_return_note(request, pk):
         return JsonResponse({'success': False, 'error': str(exc)}, status=400)
 
     if request.headers.get('HX-Request') == 'true':
-        items = ZoteroItem.objects.all().order_by('-synced_at', '-updated_at')
+        items = _zotero_items_queryset()
         return render(request, 'files/partials/zotero_list.html', {'items': items, 'zotero_state': get_zotero_state()})
     return JsonResponse({'success': True, 'result': result})
+
+
+@require_POST
+def zotero_return_note_submit(request):
+    try:
+        pk = int(request.POST.get('pk', '0'))
+    except ValueError:
+        return JsonResponse({'success': False, 'error': 'Invalid Zotero item id'}, status=400)
+    return zotero_return_note(request, pk)
 
 @require_POST
 def trigger_sync(request):
@@ -252,24 +281,26 @@ def process_with_ai(request, pk):
     node = get_object_or_404(FileNode, pk=pk)
     
     if not settings.GOOGLE_GENAI_API_KEY:
-        return JsonResponse({'error': 'API Key not configured'}, status=500)
-    
-    processed_note = AIService.process_note_with_ai(node.id)
-    
-    if processed_note:
-        # Render markdown to HTML server-side
-        from markdown_it import MarkdownIt
-        md = MarkdownIt('commonmark', {'breaks':True, 'html':True})
-        html_content = md.render(processed_note.markdown_content)
-        
         return JsonResponse({
-            'success': True, 
-            'markdown': processed_note.markdown_content,
-            'html': html_content,
-            'id': processed_note.id
-        })
-    else:
-        return JsonResponse({'error': 'AI processing failed'}, status=500)
+            'error': 'Gemini API key is not configured. Set GOOGLE_GENAI_API_KEY, GEMINI_API_KEY, or GOOGLE_API_KEY in .env.'
+        }, status=500)
+    
+    try:
+        processed_note = AIService.process_note_with_ai(node.id)
+    except Exception as exc:
+        return JsonResponse({'error': f'AI processing failed: {exc.__class__.__name__}: {exc}'}, status=500)
+
+    # Render markdown to HTML server-side
+    from markdown_it import MarkdownIt
+    md = MarkdownIt('commonmark', {'breaks':True, 'html':True})
+    html_content = md.render(processed_note.markdown_content)
+
+    return JsonResponse({
+        'success': True,
+        'markdown': processed_note.markdown_content,
+        'html': html_content,
+        'id': processed_note.id
+    })
 
 def preview_file(request, pk):
     """View to load the preview modal content for a file."""

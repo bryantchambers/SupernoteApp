@@ -12,7 +12,7 @@ class FileNode(models.Model):
     is_directory = models.BooleanField(default=False)
     is_archived = models.BooleanField(default=False)
     parent = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='children')
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -64,16 +64,92 @@ class ZoteroItem(models.Model):
     abstract_note = models.TextField(blank=True, default='')
     date = models.CharField(max_length=64, blank=True, default='')
     url = models.URLField(blank=True, default='')
+    date_added = models.DateTimeField(null=True, blank=True)
+    date_modified = models.DateTimeField(null=True, blank=True)
     attachment_key = models.CharField(max_length=64, blank=True, default='')
     attachment_title = models.CharField(max_length=512, blank=True, default='')
     attachment_filename = models.CharField(max_length=512, blank=True, default='')
     attachment_mime_type = models.CharField(max_length=128, blank=True, default='')
+    attachment_link_mode = models.CharField(max_length=64, blank=True, default='')
+    attachment_path = models.CharField(max_length=2048, blank=True, default='')
+    attachment_url = models.URLField(blank=True, default='')
     device_path = models.CharField(max_length=1024, blank=True, default='')
     note_text = models.TextField(blank=True, default='')
     raw_data = models.JSONField(default=dict, blank=True)
     is_on_device = models.BooleanField(default=False)
+    last_transfer_status = models.CharField(max_length=32, blank=True, default='idle')
+    last_transfer_message = models.TextField(blank=True, default='')
     synced_at = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.title or self.zotero_key
+
+    @property
+    def attachment_source_kind(self):
+        link_mode = (self.attachment_link_mode or '').lower()
+        if link_mode in {'linked_file', 'linked_url'}:
+            for candidate in (self.attachment_url, self.attachment_path):
+                if not candidate:
+                    continue
+                lowered = candidate.lower()
+                if 'koofr.net' in lowered or lowered.startswith('/dav/') or lowered.startswith('dav/'):
+                    return 'koofr_linked'
+                return 'remote_linked'
+            return 'linked_unresolved'
+
+        if link_mode in {'imported_file', 'imported_url'} or self.attachment_key:
+            return 'zotero_storage'
+
+        for candidate in (self.attachment_url, self.attachment_path):
+            if not candidate:
+                continue
+            lowered = candidate.lower()
+            if lowered.startswith('http://') or lowered.startswith('https://'):
+                if 'koofr.net' in lowered:
+                    return 'koofr_linked'
+                return 'remote_linked'
+            if lowered.startswith('/dav/') or lowered.startswith('dav/'):
+                return 'koofr_linked'
+            if lowered.startswith('koofr/') or lowered.startswith('zotero/'):
+                return 'koofr_linked'
+
+        return 'missing'
+
+    @property
+    def attachment_source_label(self):
+        labels = {
+            'zotero_storage': 'Zotero storage (Koofr)',
+            'koofr_linked': 'Koofr linked',
+            'remote_linked': 'Direct link',
+            'linked_unresolved': 'Linked path only',
+            'missing': 'No attachment',
+        }
+        return labels.get(self.attachment_source_kind, 'Unknown')
+
+    @property
+    def can_add_to_device(self):
+        return self.attachment_source_kind in {'zotero_storage', 'koofr_linked', 'remote_linked'}
+
+    @property
+    def transfer_status_label(self):
+        labels = {
+            'idle': 'Ready',
+            'success': 'On device',
+            'removed': 'Library only',
+            'missing_remote': 'Missing remote file',
+            'unresolved_linked': 'Linked path only',
+            'sync_failed': 'Sync failed',
+            'error': 'Needs attention',
+        }
+        if self.is_on_device and self.last_transfer_status == 'idle':
+            return 'On device'
+        return labels.get(self.last_transfer_status or 'idle', 'Ready')
+
+    @property
+    def transfer_status_tone(self):
+        if self.last_transfer_status == 'success' or (self.is_on_device and self.last_transfer_status == 'idle'):
+            return 'success'
+        if self.last_transfer_status in {'missing_remote', 'unresolved_linked', 'sync_failed', 'error'}:
+            return 'error'
+        return 'neutral'

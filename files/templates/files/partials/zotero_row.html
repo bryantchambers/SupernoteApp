@@ -6,15 +6,19 @@
     </td>
     <td class="p-2 align-top text-slate-600">
         <div>{{ item.attachment_title|default:'No attachment cached' }}</div>
-        <div class="text-xs text-slate-400">{{ item.attachment_filename }}</div>
+        <div class="text-xs text-slate-400">{{ item.attachment_filename|default:item.attachment_source_label }}</div>
+        <div class="mt-1 inline-flex items-center rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">{{ item.attachment_source_label }}</div>
     </td>
-    <td class="p-2 align-top text-slate-500">{{ item.synced_at|date:"Y-m-d H:i" }}</td>
-    <td class="p-2 align-top text-center">
-        {% if item.is_on_device %}
-        <span class="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">On device</span>
+    <td class="p-2 align-top text-slate-500">{{ item.date_added|default:item.synced_at|date:"Y-m-d H:i" }}</td>
+    <td class="p-2 align-top">
+        {% if item.transfer_status_tone == 'success' %}
+        <span class="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">{{ item.transfer_status_label }}</span>
+        {% elif item.transfer_status_tone == 'error' %}
+        <span class="inline-flex items-center rounded-full bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700">{{ item.transfer_status_label }}</span>
         {% else %}
-        <span class="inline-flex items-center rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">Library only</span>
+        <span class="inline-flex items-center rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">{{ item.transfer_status_label }}</span>
         {% endif %}
+        {% if item.last_transfer_message %}<div class="mt-1 text-xs text-slate-500 max-w-xs">{{ item.last_transfer_message }}</div>{% endif %}
     </td>
     <td class="p-2 align-top">
         <div class="flex justify-center gap-2">
@@ -26,12 +30,16 @@
                     hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
                 {% icon "minus" "w-5 h-5" %}
             </button>
-            {% else %}
+            {% elif item.can_add_to_device %}
             <button class="text-slate-400 hover:text-indigo-500 transition duration-150" title="Add to device"
                     hx-post="{% url 'files:zotero_add_to_device' item.pk %}"
                     hx-target="closest tr"
                     hx-swap="outerHTML"
                     hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+                {% icon "plus" "w-5 h-5" %}
+            </button>
+            {% else %}
+            <button class="text-slate-300 cursor-not-allowed" title="Server cannot resolve this linked file yet" disabled>
                 {% icon "plus" "w-5 h-5" %}
             </button>
             {% endif %}

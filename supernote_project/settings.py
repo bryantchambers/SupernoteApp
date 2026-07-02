@@ -17,6 +17,34 @@ import os
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+def _load_env_file(env_path: Path) -> None:
+    if not env_path.exists():
+        return
+
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        if "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'\"', "'"}:
+            value = value[1:-1]
+
+        os.environ.setdefault(key, value)
+
+
+_load_env_file(BASE_DIR / ".env")
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
@@ -96,9 +124,18 @@ ZOTERO_USER_ID = os.environ.get("ZOTERO_USER_ID", "")
 ZOTERO_LIBRARY_TYPE = os.environ.get("ZOTERO_LIBRARY_TYPE", "user")
 ZOTERO_DEVICE_DIR = BASE_DIR / "Supernote" / "Document" / "ZoteroSync"
 ZOTERO_ARCHIVE_DIR = ARCHIVE_DIR / "zotero"
+KOOFR_BASE_URL = os.environ.get("KOOFR_BASE_URL", "https://app.koofr.net/dav/Koofr/zotero")
+KOOFR_USER_NAME = os.environ.get("KOOFR_USER_NAME", "")
+KOOFR_TOKEN = os.environ.get("KOOFR_TOKEN", "")
 
 # AI Configuration
-GOOGLE_GENAI_API_KEY = os.environ.get("GOOGLE_GENAI_API_KEY", "")
+GOOGLE_GENAI_API_KEY = (
+    os.environ.get("GOOGLE_GENAI_API_KEY")
+    or os.environ.get("GEMINI_API_KEY")
+    or os.environ.get("GOOGLE_API_KEY")
+    or ""
+)
+GOOGLE_GENAI_MODEL = os.environ.get("GOOGLE_GENAI_MODEL", "gemini-2.5-flash")
 
 
 # Database
