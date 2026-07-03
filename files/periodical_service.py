@@ -41,12 +41,23 @@ def seed_curated_recipes():
                 "recipe_url": url,
                 "renew_interval_days": entry["renew_interval_days"],
                 "retention_days": entry["retention_days"],
+                "enabled": True,
             },
         )
-        if not created and (recipe.title != entry["title"] or recipe.recipe_url != url):
-            recipe.title = entry["title"]
-            recipe.recipe_url = url
-            recipe.save(update_fields=["title", "recipe_url", "updated_at"])
+        updates = []
+        if not created:
+            if recipe.title != entry["title"]:
+                recipe.title = entry["title"]
+                updates.append("title")
+            if recipe.recipe_url != url:
+                recipe.recipe_url = url
+                updates.append("recipe_url")
+            if not recipe.enabled and not recipe.last_fetched_at and recipe.last_status == "idle":
+                recipe.enabled = True
+                updates.append("enabled")
+            if updates:
+                updates.append("updated_at")
+                recipe.save(update_fields=updates)
         recipes.append(recipe)
     return recipes
 

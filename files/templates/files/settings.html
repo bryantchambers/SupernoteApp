@@ -1,0 +1,182 @@
+{% extends 'base.html' %}
+{% load lucide_icons custom_filters %}
+
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+<div class="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+        <h1 class="text-2xl md:text-3xl text-slate-800 font-bold">Settings</h1>
+        <p class="text-sm text-slate-500 mt-1">Service credentials, runtime flags, and archive export.</p>
+    </div>
+    <a href="{% url 'files:settings_export_database' %}" class="inline-flex items-center gap-2 rounded bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
+        {% icon "download" "h-4 w-4" %}
+        Export database
+    </a>
+</div>
+
+{% if settings_message %}
+<div class="mb-6 rounded border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ settings_message }}</div>
+{% endif %}
+{% if settings_error %}
+<div class="mb-6 rounded border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ settings_error }}</div>
+{% endif %}
+{% if service_check %}
+<div class="mb-6 rounded border px-4 py-3 text-sm {% if service_check.ok %}border-emerald-200 bg-emerald-50 text-emerald-700{% else %}border-rose-200 bg-rose-50 text-rose-700{% endif %}">
+    {{ service_check.message }}
+</div>
+{% endif %}
+
+<div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+    <form method="post" action="{% url 'files:settings_save_env' %}" class="space-y-6">
+        {% csrf_token %}
+
+        <section class="rounded border border-slate-200 bg-white p-5 shadow-sm">
+            <div class="mb-4 flex items-center gap-2 text-slate-800">
+                {% icon "refresh-cw" "h-5 w-5 text-indigo-500" %}
+                <h2 class="text-base font-semibold">Paths & Sync</h2>
+            </div>
+            <div class="grid gap-4 md:grid-cols-2">
+                <label class="block text-sm">
+                    <span class="mb-1 block font-medium text-slate-600">Supernote source</span>
+                    <input type="text" value="{{ supernote_source }}" disabled class="w-full rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500">
+                </label>
+                <label class="block text-sm">
+                    <span class="mb-1 block font-medium text-slate-600">Archive directory</span>
+                    <input type="text" value="{{ archive_dir }}" disabled class="w-full rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500">
+                </label>
+                <label class="block text-sm md:col-span-2">
+                    <span class="mb-1 block font-medium text-slate-600">Rclone remote</span>
+                    <input type="text" name="SUPERNOTE_REMOTE" value="{{ values.SUPERNOTE_REMOTE }}" class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+                </label>
+            </div>
+        </section>
+
+        <section class="rounded border border-slate-200 bg-white p-5 shadow-sm">
+            <div class="mb-4 flex items-center gap-2 text-slate-800">
+                {% icon "sparkles" "h-5 w-5 text-amber-500" %}
+                <h2 class="text-base font-semibold">AI</h2>
+            </div>
+            <div class="grid gap-4 md:grid-cols-2">
+                <label class="block text-sm md:col-span-2">
+                    <span class="mb-1 block font-medium text-slate-600">Gemini API key</span>
+                    <input type="password" name="GOOGLE_GENAI_API_KEY" placeholder="{{ masked_values.GOOGLE_GENAI_API_KEY|default:'Not configured' }}" class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+                </label>
+                <label class="block text-sm">
+                    <span class="mb-1 block font-medium text-slate-600">Model</span>
+                    <input type="text" name="GOOGLE_GENAI_MODEL" value="{{ values.GOOGLE_GENAI_MODEL }}" class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+                </label>
+            </div>
+        </section>
+
+        <section class="rounded border border-slate-200 bg-white p-5 shadow-sm">
+            <div class="mb-4 flex items-center gap-2 text-slate-800">
+                {% icon "book-open-text" "h-5 w-5 text-cyan-500" %}
+                <h2 class="text-base font-semibold">Zotero</h2>
+            </div>
+            <div class="grid gap-4 md:grid-cols-2">
+                <label class="block text-sm">
+                    <span class="mb-1 block font-medium text-slate-600">API base</span>
+                    <input type="url" name="ZOTERO_API_BASE" value="{{ values.ZOTERO_API_BASE }}" class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+                </label>
+                <label class="block text-sm">
+                    <span class="mb-1 block font-medium text-slate-600">Library type</span>
+                    <select name="ZOTERO_LIBRARY_TYPE" class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+                        <option value="user" {% if values.ZOTERO_LIBRARY_TYPE == 'user' %}selected{% endif %}>User</option>
+                        <option value="group" {% if values.ZOTERO_LIBRARY_TYPE == 'group' %}selected{% endif %}>Group</option>
+                    </select>
+                </label>
+                <label class="block text-sm">
+                    <span class="mb-1 block font-medium text-slate-600">User or group ID</span>
+                    <input type="text" name="ZOTERO_USER_ID" value="{{ values.ZOTERO_USER_ID }}" class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+                </label>
+                <label class="block text-sm">
+                    <span class="mb-1 block font-medium text-slate-600">API key</span>
+                    <input type="password" name="ZOTERO_API_KEY" placeholder="{{ masked_values.ZOTERO_API_KEY|default:'Not configured' }}" class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+                </label>
+            </div>
+        </section>
+
+        <section class="rounded border border-slate-200 bg-white p-5 shadow-sm">
+            <div class="mb-4 flex items-center gap-2 text-slate-800">
+                {% icon "folder" "h-5 w-5 text-emerald-500" %}
+                <h2 class="text-base font-semibold">Koofr / WebDAV</h2>
+            </div>
+            <div class="grid gap-4 md:grid-cols-2">
+                <label class="block text-sm md:col-span-2">
+                    <span class="mb-1 block font-medium text-slate-600">Base URL</span>
+                    <input type="url" name="KOOFR_BASE_URL" value="{{ values.KOOFR_BASE_URL }}" class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+                </label>
+                <label class="block text-sm">
+                    <span class="mb-1 block font-medium text-slate-600">Username</span>
+                    <input type="text" name="KOOFR_USER_NAME" value="{{ values.KOOFR_USER_NAME }}" class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+                </label>
+                <label class="block text-sm">
+                    <span class="mb-1 block font-medium text-slate-600">Token</span>
+                    <input type="password" name="KOOFR_TOKEN" placeholder="{{ masked_values.KOOFR_TOKEN|default:'Not configured' }}" class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+                </label>
+            </div>
+        </section>
+
+        <section class="rounded border border-slate-200 bg-white p-5 shadow-sm">
+            <div class="mb-4 flex items-center gap-2 text-slate-800">
+                {% icon "newspaper" "h-5 w-5 text-amber-500" %}
+                <h2 class="text-base font-semibold">Periodicals</h2>
+            </div>
+            <div class="grid gap-4 md:grid-cols-2">
+                <label class="block text-sm">
+                    <span class="mb-1 block font-medium text-slate-600">Calibre command</span>
+                    <input type="text" name="CALIBRE_EBOOK_CONVERT" value="{{ values.CALIBRE_EBOOK_CONVERT }}" class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+                </label>
+                <label class="block text-sm">
+                    <span class="mb-1 block font-medium text-slate-600">Output format</span>
+                    <input type="text" name="PERIODICAL_OUTPUT_FORMAT" value="{{ values.PERIODICAL_OUTPUT_FORMAT }}" class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+                </label>
+            </div>
+        </section>
+
+        <div class="flex justify-end">
+            <button type="submit" class="inline-flex items-center gap-2 rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
+                {% icon "settings" "h-4 w-4" %}
+                Save settings
+            </button>
+        </div>
+    </form>
+
+    <aside class="space-y-6">
+        <form method="post" action="{% url 'files:settings_save_services' %}" class="rounded border border-slate-200 bg-white p-5 shadow-sm">
+            {% csrf_token %}
+            <h2 class="mb-4 text-base font-semibold text-slate-800">Services</h2>
+            <div class="space-y-3">
+                {% for name, key in service_flag_keys.items %}
+                <label class="flex items-center justify-between rounded border border-slate-200 px-3 py-2 text-sm">
+                    <span class="font-medium text-slate-700">{{ service_labels|get_item:name }}</span>
+                    <input type="checkbox" name="{{ key }}" {% if service_flags|get_item:name %}checked{% endif %} class="h-4 w-4 rounded border-slate-300 text-indigo-600">
+                </label>
+                {% endfor %}
+            </div>
+            <button type="submit" class="mt-4 w-full rounded bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">Save service flags</button>
+        </form>
+
+        <section class="rounded border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 class="mb-4 text-base font-semibold text-slate-800">Service Checks</h2>
+            <div class="grid grid-cols-2 gap-2">
+                <form method="post" action="{% url 'files:settings_test_service' 'sync' %}">{% csrf_token %}<button class="w-full rounded border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Sync</button></form>
+                <form method="post" action="{% url 'files:settings_test_service' 'ai' %}">{% csrf_token %}<button class="w-full rounded border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">AI</button></form>
+                <form method="post" action="{% url 'files:settings_test_service' 'zotero' %}">{% csrf_token %}<button class="w-full rounded border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Zotero</button></form>
+                <form method="post" action="{% url 'files:settings_test_service' 'koofr' %}">{% csrf_token %}<button class="w-full rounded border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Koofr</button></form>
+                <form method="post" action="{% url 'files:settings_test_service' 'periodicals' %}" class="col-span-2">{% csrf_token %}<button class="w-full rounded border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Periodicals</button></form>
+            </div>
+        </section>
+
+        <section class="rounded border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 class="mb-2 text-base font-semibold text-slate-800">Archive Database</h2>
+            <p class="mb-3 text-xs text-slate-500 break-all">{{ database_path }}</p>
+            <a href="{% url 'files:settings_export_database' %}" class="inline-flex w-full items-center justify-center gap-2 rounded bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200">
+                {% icon "download" "h-4 w-4" %}
+                Export SQLite copy
+            </a>
+        </section>
+    </aside>
+</div>
+{% endblock %}

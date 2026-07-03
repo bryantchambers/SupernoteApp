@@ -202,6 +202,8 @@ def _relative_device_path(device_path):
 
 
 def _koofr_auth_header():
+    if not getattr(settings, 'KOOFR_ENABLED', True):
+        raise ZoteroSyncError('Koofr/WebDAV is disabled in Settings.')
     username = (getattr(settings, 'KOOFR_USER_NAME', '') or '').strip()
     token = (getattr(settings, 'KOOFR_TOKEN', '') or '').strip()
     if not username or not token:

@@ -1,4 +1,6 @@
 {% load lucide_icons %}
+{% if periodicals_message %}<div class="mb-4 rounded border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ periodicals_message }}</div>{% endif %}
+{% if periodicals_error %}<div class="mb-4 rounded border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ periodicals_error }}</div>{% endif %}
 <div class="space-y-6">
     <div class="bg-white shadow-lg rounded-sm border border-slate-200">
         <header class="px-5 py-4 border-b border-slate-100 flex justify-between items-center">

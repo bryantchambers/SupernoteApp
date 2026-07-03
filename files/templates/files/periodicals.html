@@ -9,15 +9,26 @@
         <h1 class="text-2xl md:text-3xl text-slate-800 font-bold">{{ title }}</h1>
         <p class="text-sm text-slate-500 mt-1">Fetch news recipes, keep recent EPUB issues, and send them to Document/News.</p>
     </div>
-    <form hx-post="{% url 'files:periodicals_seed' %}" hx-target="#periodicals-browser" hx-swap="innerHTML" class="flex items-center gap-2">
-        {% csrf_token %}
-        <button type="submit" class="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold py-2 px-4 rounded text-sm">
-            {% icon "refresh-cw" "w-4 h-4" %}
-            <span>Refresh Catalog</span>
-        </button>
-    </form>
+    <div class="flex items-center gap-2">
+        <form hx-post="{% url 'files:periodicals_seed' %}" hx-target="#periodicals-browser" hx-swap="innerHTML" class="flex items-center gap-2">
+            {% csrf_token %}
+            <button type="submit" class="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold py-2 px-4 rounded text-sm">
+                {% icon "refresh-cw" "w-4 h-4" %}
+                <span>Refresh Catalog</span>
+            </button>
+        </form>
+        <form hx-post="{% url 'files:periodicals_fetch_due' %}" hx-target="#periodicals-browser" hx-swap="innerHTML" class="flex items-center gap-2">
+            {% csrf_token %}
+            <button type="submit" class="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded text-sm">
+                {% icon "download" "w-4 h-4" %}
+                <span>Fetch Due</span>
+            </button>
+        </form>
+    </div>
 </div>
 
+{% if periodicals_message %}<div class="mb-4 rounded border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ periodicals_message }}</div>{% endif %}
+{% if periodicals_error %}<div class="mb-4 rounded border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ periodicals_error }}</div>{% endif %}
 <div class="mb-4 flex items-center justify-end gap-4">
     <form method="get" class="flex gap-2 max-w-xl w-full justify-end">
         <input type="search" name="q" value="{{ query }}" placeholder="Search periodicals" class="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">

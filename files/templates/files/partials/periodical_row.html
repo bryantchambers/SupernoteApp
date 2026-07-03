@@ -3,6 +3,7 @@
     <td class="p-2 align-top">
         <div class="font-medium text-slate-800">{{ recipe.title }}</div>
         <div class="text-xs text-slate-400 mt-1">{{ recipe.slug }}</div>
+        <div class="mt-1 inline-flex items-center rounded-full px-2 py-1 text-xs font-medium {% if recipe.enabled %}bg-emerald-50 text-emerald-700{% else %}bg-slate-100 text-slate-500{% endif %}">{% if recipe.enabled %}Enabled{% else %}Disabled{% endif %}</div>
         {% if recipe.recipe_path %}<div class="text-xs text-slate-400 mt-1 truncate max-w-xs">{{ recipe.recipe_path }}</div>{% endif %}
     </td>
     <td class="p-2 align-top text-slate-600">

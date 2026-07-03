@@ -13,7 +13,7 @@ from django.utils import timezone
 from .models import ArchiveRecord, FileNode, PeriodicalIssue, PeriodicalRecipe, SyncState, ZoteroItem, ZoteroSyncState
 from .services import crawl_supernote_directory, perform_supernote_sync
 from .ai_service import AIService
-from .views import toggle_archive_status, trigger_sync, process_with_ai, recycle_file_node, restore_file_from_recycle, empty_recycle_bin, zotero_add_to_device, zotero_remove_from_device, zotero_return_note_submit, zotero_recycle_item, zotero_restore_item, zotero_empty_bin, zotero_recycle_bin, periodical_fetch_now
+from .views import toggle_archive_status, trigger_sync, process_with_ai, recycle_file_node, restore_file_from_recycle, empty_recycle_bin, zotero_add_to_device, zotero_remove_from_device, zotero_return_note_submit, zotero_recycle_item, zotero_restore_item, zotero_empty_bin, zotero_recycle_bin, periodical_fetch_now, periodicals_fetch_due
 from .zotero_service import sync_zotero_library, add_item_to_device, remove_item_from_device, move_item_to_recycle_bin, restore_item_from_recycle_bin, empty_recycle_bin_item, return_note_to_zotero, ZoteroSyncError
 from .periodical_service import fetch_periodical, send_issue_to_device, remove_issue_from_device, seed_curated_recipes, PeriodicalError
 
@@ -842,6 +842,37 @@ class PeriodicalIntegrationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         sync_mock.assert_called_once_with(direction='push', rescan=True)
 
+    def test_periodicals_fetch_due_pushes_sync_after_success(self):
+        recipe = self._recipe()
+
+        def fake_fetch_due_periodicals():
+            issue = PeriodicalIssue.objects.create(
+                recipe=recipe,
+                title='Sample News - 2026-07-03',
+                issue_date=timezone.now().date(),
+                output_format='epub',
+                archive_path='issues/sample-news/sample.epub',
+                status='on_device',
+                is_on_device=True,
+            )
+            return {'fetched': [issue], 'errors': [], 'pruned': 0}
+
+        with override_settings(
+            PERIODICAL_ARCHIVE_DIR=self.archive_dir,
+            PERIODICAL_RECIPE_DIR=self.archive_dir / 'recipes',
+            PERIODICAL_DEVICE_DIR=self.source / 'Document' / 'News',
+            SUPERNOTE_SOURCE=self.source,
+        ):
+            with patch('files.views.fetch_due_periodicals', side_effect=fake_fetch_due_periodicals) as fetch_mock:
+                with patch('files.views.perform_supernote_sync') as sync_mock:
+                    request = self.factory.post('/periodicals/fetch-due/', {'q': ''}, HTTP_HX_REQUEST='true')
+                    response = periodicals_fetch_due(request)
+
+        self.assertEqual(response.status_code, 200)
+        fetch_mock.assert_called_once()
+        sync_mock.assert_called_once_with(direction='push', rescan=True)
+        self.assertIn(b'Fetched 1 periodicals', response.content)
+
     def test_send_and_remove_issue_updates_device_copy(self):
         recipe = self._recipe()
         issue_file = self.archive_dir / 'issues' / 'sample-news' / 'sample.epub'
@@ -872,3 +903,62 @@ class PeriodicalIntegrationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Periodicals')
         self.assertContains(response, 'BBC News')
+
+
+class SettingsDashboardTests(TestCase):
+    def setUp(self):
+        self.base_tmp = tempfile.TemporaryDirectory()
+        self.base_dir = Path(self.base_tmp.name)
+        (self.base_dir / '.env').write_text(
+            'UNKNOWN_VALUE=keep-me\n'
+            'GOOGLE_GENAI_API_KEY=abcd1234wxyz\n'
+            'GOOGLE_GENAI_MODEL=gemini-old\n',
+            encoding='utf-8',
+        )
+
+    def tearDown(self):
+        self.base_tmp.cleanup()
+
+    def test_settings_page_masks_secret_values(self):
+        with override_settings(BASE_DIR=self.base_dir):
+            response = self.client.get('/settings/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'abcd...wxyz')
+        self.assertNotContains(response, 'abcd1234wxyz')
+
+    def test_settings_save_env_preserves_unknown_values_and_blank_secret(self):
+        with override_settings(BASE_DIR=self.base_dir):
+            response = self.client.post('/settings/env/', {
+                'GOOGLE_GENAI_API_KEY': '',
+                'GOOGLE_GENAI_MODEL': 'gemini-new',
+                'ZOTERO_API_BASE': 'https://api.zotero.org',
+                'ZOTERO_LIBRARY_TYPE': 'user',
+            })
+
+        self.assertEqual(response.status_code, 200)
+        env_text = (self.base_dir / '.env').read_text(encoding='utf-8')
+        self.assertIn('UNKNOWN_VALUE=keep-me', env_text)
+        self.assertIn('GOOGLE_GENAI_API_KEY=abcd1234wxyz', env_text)
+        self.assertIn('GOOGLE_GENAI_MODEL=gemini-new', env_text)
+
+    def test_disabled_sync_refuses_manual_sync(self):
+        with override_settings(SUPERNOTE_SYNC_ENABLED=False):
+            with patch('files.views.perform_supernote_sync') as sync_mock:
+                response = self.client.post('/sync/', {'direction': 'pull'}, HTTP_HX_REQUEST='true')
+
+        self.assertEqual(response.status_code, 403)
+        sync_mock.assert_not_called()
+        self.assertContains(response, 'disabled in Settings', status_code=403)
+
+    def test_database_export_downloads_sqlite_copy(self):
+        db_path = self.base_dir / 'db.sqlite3'
+        db_path.write_bytes(b'SQLite format 3\x00')
+        database_settings = {'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': db_path}}
+
+        with override_settings(DATABASES=database_settings):
+            response = self.client.get('/settings/export/database/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('attachment;', response.headers['Content-Disposition'])
+        self.assertIn('supernote-db-', response.headers['Content-Disposition'])

@@ -111,11 +111,25 @@ INTERNAL_IPS = [
 
 # SuperNote Configuration
 SUPERNOTE_SOURCE = BASE_DIR / "Supernote"
-SUPERNOTE_REMOTE = "SuperNote:Supernote"
+SUPERNOTE_REMOTE = os.environ.get("SUPERNOTE_REMOTE", "SuperNote:Supernote")
 SUPERNOTE_SYNC_LOCK_FILE = BASE_DIR / ".sync" / "supernote.lock"
 SUPERNOTE_SYNC_INTERVAL_MINUTES = 10
 ARCHIVE_DIR = BASE_DIR / "ARCHIVE"
 PROCESSED_MD_DIR = BASE_DIR / "PROCESSED_NOTES"
+
+
+def _env_bool(name: str, default: bool = True) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+SUPERNOTE_SYNC_ENABLED = _env_bool("SUPERNOTE_SYNC_ENABLED", True)
+ZOTERO_ENABLED = _env_bool("ZOTERO_ENABLED", True)
+KOOFR_ENABLED = _env_bool("KOOFR_ENABLED", True)
+AI_PROCESSING_ENABLED = _env_bool("AI_PROCESSING_ENABLED", True)
+PERIODICALS_ENABLED = _env_bool("PERIODICALS_ENABLED", True)
 
 # Zotero Configuration
 ZOTERO_API_BASE = os.environ.get("ZOTERO_API_BASE", "https://api.zotero.org")
