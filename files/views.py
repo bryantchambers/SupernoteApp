@@ -635,6 +635,18 @@ def convert_file(request, pk, output_type):
     else:
         return JsonResponse({'error': 'Conversion failed'}, status=500)
 
+def _render_processed_note_response(processed_note):
+    from markdown_it import MarkdownIt
+    md = MarkdownIt('commonmark', {'breaks': True, 'html': True})
+    html_content = md.render(processed_note.markdown_content)
+    return JsonResponse({
+        'success': True,
+        'markdown': processed_note.markdown_content,
+        'html': html_content,
+        'id': processed_note.id,
+    })
+
+
 def process_with_ai(request, pk):
     """View to trigger AI processing of a note."""
     node = get_object_or_404(FileNode, pk=pk)
@@ -652,17 +664,31 @@ def process_with_ai(request, pk):
     except Exception as exc:
         return JsonResponse({'error': f'AI processing failed: {exc.__class__.__name__}: {exc}'}, status=500)
 
-    # Render markdown to HTML server-side
-    from markdown_it import MarkdownIt
-    md = MarkdownIt('commonmark', {'breaks':True, 'html':True})
-    html_content = md.render(processed_note.markdown_content)
+    return _render_processed_note_response(processed_note)
 
-    return JsonResponse({
-        'success': True,
-        'markdown': processed_note.markdown_content,
-        'html': html_content,
-        'id': processed_note.id
-    })
+
+def process_with_ai_custom(request, pk):
+    """View to trigger AI processing with a custom prompt."""
+    node = get_object_or_404(FileNode, pk=pk)
+
+    if not is_service_enabled('ai'):
+        return JsonResponse({'error': 'AI processing is disabled in Settings.'}, status=403)
+
+    if not settings.GOOGLE_GENAI_API_KEY:
+        return JsonResponse({
+            'error': 'Gemini API key is not configured. Set GOOGLE_GENAI_API_KEY, GEMINI_API_KEY, or GOOGLE_API_KEY in .env.'
+        }, status=500)
+
+    prompt = (request.POST.get('prompt') or '').strip()
+    if not prompt:
+        return JsonResponse({'error': 'Custom prompt is required.'}, status=400)
+
+    try:
+        processed_note = AIService.process_note_with_ai(node.id, prompt=prompt)
+    except Exception as exc:
+        return JsonResponse({'error': f'AI processing failed: {exc.__class__.__name__}: {exc}'}, status=500)
+
+    return _render_processed_note_response(processed_note)
 
 def preview_file(request, pk):
     """View to load the preview modal content for a file."""
@@ -736,7 +762,7 @@ def download_ai(request, pk):
     from .models_ai import ProcessedNote
     processed_note = get_object_or_404(ProcessedNote, pk=pk)
     
-    response = HttpResponse(processed_note.markdown_content, content_type='application/octet-stream')
-    filename = f"{processed_note.source_node.name}_ai_markdown.txt"
+    response = HttpResponse(processed_note.markdown_content, content_type='text/markdown; charset=utf-8')
+    filename = f"{processed_note.file_node.name}_ai_markdown.md"
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response

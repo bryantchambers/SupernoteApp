@@ -1,0 +1,16 @@
+.git
+.env
+ARCHIVE
+PROCESSED_NOTES
+SUPERNOTE_DEVELOPMENT_COPY
+Supernote
+db.sqlite3
+temp_tiles
+__pycache__
+*.py[cod]
+*.sqlite3
+*.pdf
+*.png
+*.jpg
+theme/static_src/node_modules
+deploy/*.tar.gz

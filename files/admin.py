@@ -5,7 +5,7 @@ from .models import PeriodicalIssue, PeriodicalRecipe
 
 @admin.register(PeriodicalRecipe)
 class PeriodicalRecipeAdmin(admin.ModelAdmin):
-    list_display = ('title', 'enabled', 'renew_interval_days', 'retention_days', 'last_status', 'last_fetched_at')
+    list_display = ('title', 'enabled', 'renew_interval_days', 'retention_days', 'last_status', 'last_checked_at', 'last_fetched_at')
     search_fields = ('title', 'slug')
     list_filter = ('enabled', 'last_status')
 

@@ -42,19 +42,32 @@ def _load_env_file(env_path: Path) -> None:
         os.environ.setdefault(key, value)
 
 
-_load_env_file(BASE_DIR / ".env")
+ENV_FILE = Path(os.environ.get("SUPERNOTE_ENV_FILE", BASE_DIR / ".env"))
+_load_env_file(ENV_FILE)
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-gpkq8v=uohvn$s-^=d%x%90g16ucktia49hg$os-x=(6&hi=0+'
+SECRET_KEY = os.environ.get(
+    "DJANGO_SECRET_KEY",
+    "django-insecure-gpkq8v=uohvn$s-^=d%x%90g16ucktia49hg$os-x=(6&hi=0+",
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get("DJANGO_DEBUG", "true").strip().lower() in {"1", "true", "yes", "on"}
 
-ALLOWED_HOSTS = ['rockpigeon', 'localhost', '127.0.0.1']
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "rockpigeon,localhost,127.0.0.1").split(",")
+    if host.strip()
+]
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin.strip()
+]
 
 
 # Application definition
@@ -110,12 +123,16 @@ INTERNAL_IPS = [
 ]
 
 # SuperNote Configuration
-SUPERNOTE_SOURCE = BASE_DIR / "Supernote"
+DATA_DIR = Path(os.environ.get("SUPERNOTE_DATA_DIR", BASE_DIR))
+SUPERNOTE_SOURCE = Path(os.environ.get("SUPERNOTE_SOURCE", DATA_DIR / "Supernote"))
 SUPERNOTE_REMOTE = os.environ.get("SUPERNOTE_REMOTE", "SuperNote:Supernote")
-SUPERNOTE_SYNC_LOCK_FILE = BASE_DIR / ".sync" / "supernote.lock"
+SUPERNOTE_SYNC_LOCK_FILE = Path(
+    os.environ.get("SUPERNOTE_SYNC_LOCK_FILE", DATA_DIR / ".sync" / "supernote.lock")
+)
 SUPERNOTE_SYNC_INTERVAL_MINUTES = 10
-ARCHIVE_DIR = BASE_DIR / "ARCHIVE"
-PROCESSED_MD_DIR = BASE_DIR / "PROCESSED_NOTES"
+ARCHIVE_DIR = Path(os.environ.get("SUPERNOTE_ARCHIVE_DIR", DATA_DIR / "ARCHIVE"))
+PROCESSED_MD_DIR = Path(os.environ.get("SUPERNOTE_PROCESSED_DIR", DATA_DIR / "PROCESSED_NOTES"))
+SUPERNOTE_TOOL_COMMAND = os.environ.get("SUPERNOTE_TOOL_COMMAND", "supernote-tool")
 
 
 def _env_bool(name: str, default: bool = True) -> bool:
@@ -136,14 +153,14 @@ ZOTERO_API_BASE = os.environ.get("ZOTERO_API_BASE", "https://api.zotero.org")
 ZOTERO_API_KEY = os.environ.get("ZOTERO_API_KEY", "")
 ZOTERO_USER_ID = os.environ.get("ZOTERO_USER_ID", "")
 ZOTERO_LIBRARY_TYPE = os.environ.get("ZOTERO_LIBRARY_TYPE", "user")
-ZOTERO_DEVICE_DIR = BASE_DIR / "Supernote" / "Document" / "ZoteroSync"
+ZOTERO_DEVICE_DIR = SUPERNOTE_SOURCE / "Document" / "ZoteroSync"
 ZOTERO_ARCHIVE_DIR = ARCHIVE_DIR / "zotero"
 KOOFR_BASE_URL = os.environ.get("KOOFR_BASE_URL", "https://app.koofr.net/dav/Koofr/zotero")
 KOOFR_USER_NAME = os.environ.get("KOOFR_USER_NAME", "")
 KOOFR_TOKEN = os.environ.get("KOOFR_TOKEN", "")
 
 # Periodicals Configuration
-PERIODICAL_DEVICE_DIR = BASE_DIR / "Supernote" / "Document" / "News"
+PERIODICAL_DEVICE_DIR = SUPERNOTE_SOURCE / "Document" / "News"
 PERIODICAL_ARCHIVE_DIR = ARCHIVE_DIR / "periodicals"
 PERIODICAL_RECIPE_DIR = PERIODICAL_ARCHIVE_DIR / "recipes"
 CALIBRE_EBOOK_CONVERT = os.environ.get("CALIBRE_EBOOK_CONVERT", "ebook-convert")
@@ -156,7 +173,7 @@ GOOGLE_GENAI_API_KEY = (
     or os.environ.get("GOOGLE_API_KEY")
     or ""
 )
-GOOGLE_GENAI_MODEL = os.environ.get("GOOGLE_GENAI_MODEL", "gemini-2.5-flash")
+GOOGLE_GENAI_MODEL = os.environ.get("GOOGLE_GENAI_MODEL", "gemini-3.6-flash")
 
 
 # Database
@@ -165,7 +182,7 @@ GOOGLE_GENAI_MODEL = os.environ.get("GOOGLE_GENAI_MODEL", "gemini-2.5-flash")
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'NAME': Path(os.environ.get("SUPERNOTE_DATABASE_PATH", DATA_DIR / "db.sqlite3")),
     }
 }
 
@@ -205,4 +222,4 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATIC_ROOT = Path(os.environ.get("SUPERNOTE_STATIC_ROOT", BASE_DIR / "staticfiles"))

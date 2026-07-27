@@ -74,6 +74,10 @@
                     hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
                 {% icon "sparkles" "w-5 h-5" %}
             </button>
+            <button type="button" class="text-slate-400 hover:text-indigo-500 transition duration-150" title="Custom AI Prompt"
+                    @click.prevent="$dispatch('open-custom-ai-modal', { pk: {{ node.pk }}, name: '{{ node.name|escapejs }}' })">
+                {% icon "notebook-pen" "w-5 h-5" %}
+            </button>
             <a href="{% url 'files:convert_file' node.pk 'pdf' %}" class="text-slate-400 hover:text-indigo-500 transition duration-150" title="Convert to PDF">
                 {% icon "file-down" "w-5 h-5" %}
             </a>

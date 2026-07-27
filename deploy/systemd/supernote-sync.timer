@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Supernote OneDrive sync every 10 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=10min
+RandomizedDelaySec=30
+Persistent=true
+
+[Install]
+WantedBy=timers.target

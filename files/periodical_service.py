@@ -30,6 +30,14 @@ class PeriodicalError(RuntimeError):
     pass
 
 
+NO_ARTICLES_PATTERNS = (
+    "NoArticles",
+    "Could not find any articles",
+    "recipe needs to be updated",
+    "server is having trouble",
+)
+
+
 def seed_curated_recipes():
     recipes = []
     for entry in CURATED_RECIPES:
@@ -164,6 +172,26 @@ def _credential_args(recipe):
     return args
 
 
+def _run_calibre_fetch(command, debug=False, recipe=None):
+    debug_path = ""
+    if debug and recipe is not None:
+        debug_dir = Path(settings.PERIODICAL_ARCHIVE_DIR) / "debug" / recipe.slug / timezone.now().strftime("%Y%m%d-%H%M%S")
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        command.extend(["--test", "-vv", "--debug-pipeline", str(debug_dir)])
+        debug_path = _relative_to_archive(debug_dir)
+    result = subprocess.run(command, capture_output=True, text=True, timeout=900)
+    return result, debug_path
+
+
+def _combined_log(result):
+    return "\n".join(part for part in [result.stdout.strip(), result.stderr.strip()] if part)
+
+
+def _is_no_articles_failure(log_text):
+    lowered = (log_text or "").lower()
+    return any(pattern.lower() in lowered for pattern in NO_ARTICLES_PATTERNS)
+
+
 def fetch_periodical(recipe, debug=False, deliver_to_device=True):
     recipe.last_status = "running"
     recipe.last_message = "Fetching periodical."
@@ -175,13 +203,7 @@ def fetch_periodical(recipe, debug=False, deliver_to_device=True):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         command = _calibre_command(recipe_path, output_path)
         command.extend(_credential_args(recipe))
-        debug_path = ""
-        if debug:
-            debug_dir = Path(settings.PERIODICAL_ARCHIVE_DIR) / "debug" / recipe.slug / timezone.now().strftime("%Y%m%d-%H%M%S")
-            debug_dir.mkdir(parents=True, exist_ok=True)
-            command.extend(["--test", "-vv", "--debug-pipeline", str(debug_dir)])
-            debug_path = _relative_to_archive(debug_dir)
-        result = subprocess.run(command, capture_output=True, text=True, timeout=900)
+        result, debug_path = _run_calibre_fetch(command, debug=debug, recipe=recipe)
     except FileNotFoundError as exc:
         message = f"Calibre ebook-convert was not found: {getattr(settings, 'CALIBRE_EBOOK_CONVERT', 'ebook-convert')}"
         recipe.last_status = "missing_calibre"
@@ -194,7 +216,21 @@ def fetch_periodical(recipe, debug=False, deliver_to_device=True):
         recipe.save(update_fields=["last_status", "last_message", "updated_at"])
         raise
 
-    combined_log = "\n".join(part for part in [result.stdout.strip(), result.stderr.strip()] if part)
+    combined_log = _combined_log(result)
+    if (result.returncode != 0 or not output_path.exists()) and _is_no_articles_failure(combined_log) and recipe.recipe_url:
+        recipe.last_message = "Recipe index was empty. Refreshing the cached recipe and retrying once."
+        recipe.save(update_fields=["last_message", "updated_at"])
+        recipe_path = _download_recipe(recipe, force=True)
+        if output_path.exists():
+            output_path.unlink()
+        retry_command = _calibre_command(recipe_path, output_path)
+        retry_command.extend(_credential_args(recipe))
+        retry_result, retry_debug_path = _run_calibre_fetch(retry_command, debug=debug, recipe=recipe)
+        if retry_debug_path:
+            debug_path = retry_debug_path
+        combined_log = "\n\n".join(part for part in [combined_log, _combined_log(retry_result)] if part)
+        result = retry_result
+
     if result.returncode != 0 or not output_path.exists():
         message = combined_log or f"ebook-convert exited with status {result.returncode}."
         recipe.last_status = "fetch_failed"

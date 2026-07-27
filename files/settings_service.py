@@ -61,7 +61,7 @@ RUNTIME_SETTINGS = {
 
 DEFAULTS = {
     'SUPERNOTE_REMOTE': 'SuperNote:Supernote',
-    'GOOGLE_GENAI_MODEL': 'gemini-2.5-flash',
+    'GOOGLE_GENAI_MODEL': 'gemini-3.6-flash',
     'ZOTERO_API_BASE': 'https://api.zotero.org',
     'ZOTERO_LIBRARY_TYPE': 'user',
     'KOOFR_BASE_URL': 'https://app.koofr.net/dav/Koofr/zotero',
@@ -81,7 +81,8 @@ class ServiceCheck:
 
 
 def env_path() -> Path:
-    return Path(settings.BASE_DIR) / '.env'
+    configured_path = os.environ.get('SUPERNOTE_ENV_FILE')
+    return Path(configured_path) if configured_path else Path(settings.BASE_DIR) / '.env'
 
 
 def _parse_line(line: str):

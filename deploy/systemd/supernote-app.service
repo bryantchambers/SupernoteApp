@@ -1,0 +1,16 @@
+[Unit]
+Description=SupernoteApp container stack
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=@PROJECT_ROOT@
+ExecStart=/usr/bin/docker compose --env-file @STATE_DIR@/config/compose.env -f @PROJECT_ROOT@/compose.yaml up -d
+ExecStop=/usr/bin/docker compose --env-file @STATE_DIR@/config/compose.env -f @PROJECT_ROOT@/compose.yaml down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

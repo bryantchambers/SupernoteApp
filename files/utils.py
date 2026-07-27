@@ -1,6 +1,7 @@
 import subprocess
 import os
 import logging
+import shlex
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
@@ -17,8 +18,7 @@ class SuperNoteUtility:
             return False
 
         command = [
-            "mamba", "run", "-n", "SuperNoteTools",
-            "supernote-tool", "convert",
+            *shlex.split(settings.SUPERNOTE_TOOL_COMMAND), "convert",
             "-a", # Convert all pages
             "-t", output_type,
             input_path,
@@ -48,8 +48,7 @@ class SuperNoteUtility:
         output_prefix = os.path.join(output_dir, "page.png")
         
         command = [
-            "mamba", "run", "-n", "SuperNoteTools",
-            "supernote-tool", "convert",
+            *shlex.split(settings.SUPERNOTE_TOOL_COMMAND), "convert",
             "-a", 
             "-t", "png",
             input_path,

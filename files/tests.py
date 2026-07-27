@@ -11,9 +11,10 @@ from supernote_project import settings as project_settings
 from django.utils import timezone
 
 from .models import ArchiveRecord, FileNode, PeriodicalIssue, PeriodicalRecipe, SyncState, ZoteroItem, ZoteroSyncState
+from .models_ai import ProcessedNote
 from .services import crawl_supernote_directory, perform_supernote_sync
 from .ai_service import AIService
-from .views import toggle_archive_status, trigger_sync, process_with_ai, recycle_file_node, restore_file_from_recycle, empty_recycle_bin, zotero_add_to_device, zotero_remove_from_device, zotero_return_note_submit, zotero_recycle_item, zotero_restore_item, zotero_empty_bin, zotero_recycle_bin, periodical_fetch_now, periodicals_fetch_due
+from .views import toggle_archive_status, trigger_sync, process_with_ai, process_with_ai_custom, download_ai, recycle_file_node, restore_file_from_recycle, empty_recycle_bin, zotero_add_to_device, zotero_remove_from_device, zotero_return_note_submit, zotero_recycle_item, zotero_restore_item, zotero_empty_bin, zotero_recycle_bin, periodical_fetch_now, periodicals_fetch_due
 from .zotero_service import sync_zotero_library, add_item_to_device, remove_item_from_device, move_item_to_recycle_bin, restore_item_from_recycle_bin, empty_recycle_bin_item, return_note_to_zotero, ZoteroSyncError
 from .periodical_service import fetch_periodical, send_issue_to_device, remove_issue_from_device, seed_curated_recipes, PeriodicalError
 
@@ -333,6 +334,56 @@ class EnvLoadingAndAIServiceTests(TestCase):
         self.assertEqual(response.status_code, 500)
         self.assertIn(b'ValueError: bad key', response.content)
 
+    def test_process_with_ai_custom_forwards_prompt(self):
+        node = FileNode.objects.create(
+            path='Note/sample.note',
+            name='sample.note',
+            extension='note',
+            size=5,
+            last_modified=timezone.now(),
+            hash='abc',
+            is_directory=False,
+        )
+        processed_note = ProcessedNote.objects.create(
+            file_node=node,
+            markdown_content='# custom markdown',
+            last_processed_hash='abc',
+        )
+
+        with override_settings(GOOGLE_GENAI_API_KEY='secret-key'):
+            with patch('files.views.AIService.process_note_with_ai', return_value=processed_note) as process_mock:
+                request = self.factory.post(f'/process-ai-custom/{node.pk}/', {'prompt': 'Summarize this note as bullets.'})
+                response = process_with_ai_custom(request, node.pk)
+
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.content.decode('utf-8'))
+        self.assertTrue(payload['success'])
+        self.assertIn('custom markdown', payload['markdown'])
+        process_mock.assert_called_once_with(node.id, prompt='Summarize this note as bullets.')
+
+    def test_download_ai_uses_source_file_name(self):
+        node = FileNode.objects.create(
+            path='Note/sample.note',
+            name='sample.note',
+            extension='note',
+            size=5,
+            last_modified=timezone.now(),
+            hash='abc',
+            is_directory=False,
+        )
+        processed_note = ProcessedNote.objects.create(
+            file_node=node,
+            markdown_content='# markdown',
+            last_processed_hash='abc',
+        )
+
+        request = self.factory.get(f'/download-ai/{processed_note.pk}/')
+        response = download_ai(request, processed_note.pk)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('sample.note_ai_markdown.md', response.headers['Content-Disposition'])
+        self.assertEqual(response.content.decode('utf-8'), '# markdown')
+
     def test_ai_service_uses_configured_key_and_model(self):
         source_tmp = tempfile.TemporaryDirectory()
         archive_tmp = tempfile.TemporaryDirectory()
@@ -352,6 +403,7 @@ class EnvLoadingAndAIServiceTests(TestCase):
             )
 
             fake_client = MagicMock()
+            fake_client.models.list.return_value = []
             fake_client.models.generate_content.return_value = MagicMock(text='# converted markdown')
 
             def fake_convert_note_to_images(input_path, temp_img_dir):
@@ -373,6 +425,58 @@ class EnvLoadingAndAIServiceTests(TestCase):
             self.assertEqual(result.markdown_content, '# converted markdown')
             fake_client.models.generate_content.assert_called_once()
             self.assertEqual(fake_client.models.generate_content.call_args.kwargs['model'], 'gemini-test-model')
+        finally:
+            source_tmp.cleanup()
+            archive_tmp.cleanup()
+
+    def test_ai_service_falls_back_when_configured_model_is_missing(self):
+        source_tmp = tempfile.TemporaryDirectory()
+        archive_tmp = tempfile.TemporaryDirectory()
+        source = Path(source_tmp.name)
+        archive_dir = Path(archive_tmp.name)
+        try:
+            (source / 'Note').mkdir(parents=True, exist_ok=True)
+            (source / 'Note' / 'sample.note').write_text('hello', encoding='utf-8')
+            node = FileNode.objects.create(
+                path='Note/sample.note',
+                name='sample.note',
+                extension='note',
+                size=5,
+                last_modified=timezone.now(),
+                hash='abc',
+                is_directory=False,
+            )
+
+            fake_client = MagicMock()
+            fake_client.models.list.return_value = []
+
+            def fake_generate_content(**kwargs):
+                if kwargs['model'] == 'gemini-new':
+                    raise RuntimeError('404 NOT_FOUND model not found')
+                return MagicMock(text='# fallback markdown')
+
+            fake_client.models.generate_content.side_effect = fake_generate_content
+
+            def fake_convert_note_to_images(input_path, temp_img_dir):
+                Path(temp_img_dir).mkdir(parents=True, exist_ok=True)
+                Path(temp_img_dir, 'page-1.png').write_bytes(b'\x89PNG\r\n\x1a\n')
+                return True
+
+            with override_settings(
+                SUPERNOTE_SOURCE=source,
+                ARCHIVE_DIR=archive_dir,
+                GOOGLE_GENAI_API_KEY='secret-key',
+                GOOGLE_GENAI_MODEL='gemini-new',
+            ):
+                with patch('files.ai_service.genai.Client', return_value=fake_client):
+                    with patch('files.ai_service.SuperNoteUtility.convert_note_to_images', side_effect=fake_convert_note_to_images):
+                        result = AIService.process_note_with_ai(node.id)
+
+            self.assertIsNotNone(result)
+            self.assertEqual(result.markdown_content, '# fallback markdown')
+            self.assertEqual(fake_client.models.generate_content.call_count, 2)
+            self.assertEqual(fake_client.models.generate_content.call_args_list[0].kwargs['model'], 'gemini-new')
+            self.assertEqual(fake_client.models.generate_content.call_args_list[1].kwargs['model'], 'gemini-3.6-flash')
         finally:
             source_tmp.cleanup()
             archive_tmp.cleanup()
@@ -767,6 +871,7 @@ class PeriodicalIntegrationTests(TestCase):
             slug='sample-news',
             title='Sample News',
             recipe_path=str(recipe_path),
+            recipe_url='https://example.com/sample.recipe',
             enabled=True,
             renew_interval_days=1,
             retention_days=7,
@@ -817,6 +922,41 @@ class PeriodicalIntegrationTests(TestCase):
         recipe.refresh_from_db()
         self.assertEqual(recipe.last_status, 'missing_calibre')
         self.assertIn('ebook-convert was not found', recipe.last_message)
+
+    def test_fetch_periodical_retries_after_no_articles_failure(self):
+        recipe = self._recipe()
+
+        def fake_run(command, capture_output=True, text=True, timeout=900):
+            output_path = Path(command[2])
+            if fake_run.calls == 0:
+                fake_run.calls += 1
+                return MagicMock(returncode=1, stdout='', stderr='NoArticles: Could not find any articles, either the economist.com server is having trouble and you should try later or the website format has changed and the recipe needs to be updated.')
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b'epub bytes')
+            return MagicMock(returncode=0, stdout='retry ok', stderr='')
+
+        fake_run.calls = 0
+
+        def fake_download(download_recipe, force=False):
+            return Path(download_recipe.recipe_path)
+
+        with override_settings(
+            PERIODICAL_ARCHIVE_DIR=self.archive_dir,
+            PERIODICAL_RECIPE_DIR=self.archive_dir / 'recipes',
+            PERIODICAL_DEVICE_DIR=self.source / 'Document' / 'News',
+            SUPERNOTE_SOURCE=self.source,
+        ):
+            with patch('files.periodical_service.subprocess.run', side_effect=fake_run) as run_mock:
+                with patch('files.periodical_service._download_recipe', side_effect=fake_download) as download_mock:
+                    issue = fetch_periodical(recipe)
+
+        recipe.refresh_from_db()
+        issue.refresh_from_db()
+        self.assertEqual(recipe.last_status, 'success')
+        self.assertEqual(issue.status, 'on_device')
+        self.assertGreaterEqual(run_mock.call_count, 2)
+        self.assertEqual(download_mock.call_args_list[0].kwargs.get('force', False), False)
+        self.assertTrue(any(call.kwargs.get('force') is True for call in download_mock.call_args_list))
 
     def test_periodical_fetch_now_pushes_sync_after_success(self):
         recipe = self._recipe()

@@ -1,0 +1,10 @@
+:80 {
+    encode zstd gzip
+
+    handle_path /static/* {
+        root * /static
+        file_server
+    }
+
+    reverse_proxy web:8000
+}
