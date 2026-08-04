@@ -122,10 +122,18 @@ if [[ -n "${IMPORT_DB}" ]]; then
     install -m 0640 "${IMPORT_DB}" "${STATE_DIR}/data/db.sqlite3"
 fi
 if [[ -n "${IMPORT_ARCHIVE}" ]]; then
+    if [[ ! -d "${IMPORT_ARCHIVE}" ]]; then
+        echo "Archive import directory not found: ${IMPORT_ARCHIVE}" >&2
+        exit 1
+    fi
     cp -a "${IMPORT_ARCHIVE}/." "${STATE_DIR}/data/ARCHIVE/"
 fi
 if [[ -n "${IMPORT_PROCESSED}" ]]; then
-    cp -a "${IMPORT_PROCESSED}/." "${STATE_DIR}/data/PROCESSED_NOTES/"
+    if [[ -d "${IMPORT_PROCESSED}" ]]; then
+        cp -a "${IMPORT_PROCESSED}/." "${STATE_DIR}/data/PROCESSED_NOTES/"
+    else
+        echo "Warning: PROCESSED_NOTES import directory not found, skipping: ${IMPORT_PROCESSED}" >&2
+    fi
 fi
 if [[ -n "${IMPORT_RCLONE}" ]]; then
     install -m 0600 "${IMPORT_RCLONE}" "${STATE_DIR}/config/rclone/rclone.conf"
@@ -135,7 +143,9 @@ chown -R 10001:10001 "${STATE_DIR}/data" "${STATE_DIR}/config" "${STATE_DIR}/bac
 chmod 0600 "${app_env}" "${compose_env}"
 [[ ! -f "${STATE_DIR}/config/rclone/rclone.conf" ]] || chmod 0600 "${STATE_DIR}/config/rclone/rclone.conf"
 
-export STATE_DIR APP_PORT BIND_ADDRESS
+export PROJECT_ROOT STATE_DIR APP_PORT BIND_ADDRESS
+export COMPOSE_ENV="${compose_env}"
+export COMPOSE_FILE="${PROJECT_ROOT}/compose.yaml"
 docker compose --env-file "${compose_env}" -f "${PROJECT_ROOT}/compose.yaml" build
 docker compose --env-file "${compose_env}" -f "${PROJECT_ROOT}/compose.yaml" up -d
 

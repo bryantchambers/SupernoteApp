@@ -18,7 +18,11 @@ APP_PORT="${APP_PORT:-8000}"
 BIND_ADDRESS="${BIND_ADDRESS:-0.0.0.0}"
 
 compose() {
-    docker compose --env-file "${COMPOSE_ENV}" -f "${COMPOSE_FILE}" "$@"
+    local args=(-f "${COMPOSE_FILE}")
+    if [[ -f "${COMPOSE_ENV}" ]]; then
+        args=(--env-file "${COMPOSE_ENV}" "${args[@]}")
+    fi
+    docker compose "${args[@]}" "$@"
 }
 
 require_root() {
