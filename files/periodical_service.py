@@ -1,3 +1,4 @@
+import filecmp
 import os
 import shutil
 import subprocess
@@ -141,6 +142,73 @@ def _issue_output_path(recipe, now=None):
     return Path(settings.PERIODICAL_ARCHIVE_DIR) / "issues" / recipe.slug / filename
 
 
+def _issue_device_filename(issue):
+    issue_date = issue.issue_date or (issue.fetched_at.date() if issue.fetched_at else timezone.localdate())
+    title_slug = slugify(issue.recipe.title) or issue.recipe.slug
+    output_format = (issue.output_format or getattr(settings, "PERIODICAL_OUTPUT_FORMAT", "epub")).lower()
+    return f"{issue_date.isoformat()}-{title_slug}.{output_format}"
+
+
+def _news_device_root():
+    return Path(settings.PERIODICAL_DEVICE_DIR)
+
+
+def _news_device_target_path(issue):
+    return _news_device_root() / _issue_device_filename(issue)
+
+
+def _dedupe_device_target(root, filename):
+    candidate = root / filename
+    if not candidate.exists():
+        return candidate
+
+    suffix = candidate.suffix
+    stem = candidate.stem
+    counter = 2
+    while True:
+        deduped = root / f"{stem}-{counter}{suffix}"
+        if not deduped.exists():
+            return deduped
+        counter += 1
+
+
+def flatten_news_device_folder(root=None, dry_run=False):
+    root = Path(root) if root is not None else _news_device_root()
+    root.mkdir(parents=True, exist_ok=True)
+    moves = {}
+
+    for path in sorted(root.rglob('*')):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(root)
+        if len(rel.parts) <= 1:
+            continue
+
+        target = root / rel.name
+        if target.exists():
+            if filecmp.cmp(path, target, shallow=False):
+                moves[str(path)] = str(target)
+                if not dry_run:
+                    path.unlink()
+                continue
+            target = _dedupe_device_target(root, target.name)
+
+        moves[str(path)] = str(target)
+        if dry_run:
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(path), str(target))
+
+    if not dry_run:
+        for directory in sorted((p for p in root.rglob('*') if p.is_dir()), key=lambda p: len(p.parts), reverse=True):
+            try:
+                directory.rmdir()
+            except OSError:
+                pass
+
+    return {'root': str(root), 'moves': moves}
+
+
 def _calibre_command(recipe_path, output_path):
     return [
         str(getattr(settings, "CALIBRE_EBOOK_CONVERT", "ebook-convert")),
@@ -275,10 +343,8 @@ def send_issue_to_device(issue):
         issue.save(update_fields=["status", "status_message", "updated_at"])
         raise PeriodicalError(issue.status_message)
 
-    safe_publication = slugify(issue.recipe.title) or issue.recipe.slug
-    target_dir = Path(settings.PERIODICAL_DEVICE_DIR) / safe_publication
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target_path = target_dir / source_path.name
+    target_path = _news_device_target_path(issue)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source_path, target_path)
 
     issue.device_path = _relative_device_path(target_path)

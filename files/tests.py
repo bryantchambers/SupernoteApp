@@ -3,9 +3,11 @@ import json
 import os
 import tempfile
 import zipfile
+from datetime import date
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from django.core.management import call_command
 from django.test import RequestFactory, TestCase, override_settings
 from supernote_project import settings as project_settings
 from django.utils import timezone
@@ -16,7 +18,7 @@ from .services import crawl_supernote_directory, perform_supernote_sync
 from .ai_service import AIService
 from .views import toggle_archive_status, trigger_sync, process_with_ai, process_with_ai_custom, download_ai, recycle_file_node, restore_file_from_recycle, empty_recycle_bin, zotero_add_to_device, zotero_remove_from_device, zotero_return_note_submit, zotero_recycle_item, zotero_restore_item, zotero_empty_bin, zotero_recycle_bin, periodical_fetch_now, periodicals_fetch_due
 from .zotero_service import sync_zotero_library, add_item_to_device, remove_item_from_device, move_item_to_recycle_bin, restore_item_from_recycle_bin, empty_recycle_bin_item, return_note_to_zotero, ZoteroSyncError
-from .periodical_service import fetch_periodical, send_issue_to_device, remove_issue_from_device, seed_curated_recipes, PeriodicalError
+from .periodical_service import fetch_periodical, send_issue_to_device, remove_issue_from_device, seed_curated_recipes, flatten_news_device_folder, PeriodicalError
 
 
 class SupernoteSyncTests(TestCase):
@@ -1030,12 +1032,41 @@ class PeriodicalIntegrationTests(TestCase):
             issue.refresh_from_db()
             device_path = self.source / issue.device_path
             self.assertTrue(device_path.exists())
+            self.assertEqual(device_path.parent, self.source / 'Document' / 'News')
             self.assertTrue(issue.is_on_device)
             remove_issue_from_device(issue)
 
         issue.refresh_from_db()
         self.assertFalse(issue.is_on_device)
         self.assertFalse(device_path.exists())
+
+    def test_flatten_news_folder_updates_existing_nested_files(self):
+        news_root = self.source / 'Document' / 'News'
+        nested_dir = news_root / 'the-atlantic'
+        nested_dir.mkdir(parents=True, exist_ok=True)
+        flat_file = nested_dir / '2026-08-04-the-atlantic.epub'
+        flat_file.write_bytes(b'epub bytes')
+        recipe = self._recipe()
+        issue = PeriodicalIssue.objects.create(
+            recipe=recipe,
+            title='Sample News - 2026-08-04',
+            issue_date=date(2026, 8, 4),
+            output_format='epub',
+            archive_path='issues/sample-news/2026-08-04-sample-news.epub',
+            device_path='Document/News/the-atlantic/2026-08-04-the-atlantic.epub',
+            status='on_device',
+            is_on_device=True,
+        )
+
+        with override_settings(SUPERNOTE_SOURCE=self.source, PERIODICAL_DEVICE_DIR=news_root):
+            call_command('flatten_news_folder')
+
+        issue.refresh_from_db()
+        moved_file = news_root / '2026-08-04-the-atlantic.epub'
+        self.assertTrue(moved_file.exists())
+        self.assertFalse(nested_dir.exists())
+        self.assertEqual(issue.device_path, 'Document/News/2026-08-04-the-atlantic.epub')
+        self.assertTrue(issue.is_on_device)
 
     def test_periodicals_dashboard_renders_catalog(self):
         seed_curated_recipes()

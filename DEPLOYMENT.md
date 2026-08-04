@@ -19,6 +19,14 @@ Do not expose this deployment directly to the public internet. The current appli
 Run on the heavy-lift system while the application is stopped:
 
 ~~~bash
+deploy/export_state.sh /tmp/supernote-pi-import --tarball
+~~~
+
+This exports `.env`, the SQLite database, `ARCHIVE`, `PROCESSED_NOTES` when present, and `rclone.conf`. The Supernote mirror is intentionally excluded.
+
+Equivalent manual steps:
+
+~~~bash
 mkdir -p /tmp/supernote-pi-import
 sqlite3 db.sqlite3 ".backup '/tmp/supernote-pi-import/db.sqlite3'"
 cp .env /tmp/supernote-pi-import/app.env
