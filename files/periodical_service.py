@@ -22,8 +22,8 @@ CURATED_RECIPES = [
     {"slug": "the-atlantic", "title": "The Atlantic", "filename": "atlantic.recipe", "renew_interval_days": 7, "retention_days": 21},
     {"slug": "the-new-yorker", "title": "The New Yorker", "filename": "new_yorker.recipe", "renew_interval_days": 7, "retention_days": 30},
     {"slug": "the-economist", "title": "The Economist", "filename": "economist.recipe", "renew_interval_days": 7, "retention_days": 30},
-    {"slug": "boston-globe", "title": "The Boston Globe", "filename": "boston_globe.recipe", "renew_interval_days": 1, "retention_days": 14},
-    {"slug": "la-times", "title": "LA Times", "filename": "la_times.recipe", "renew_interval_days": 1, "retention_days": 14},
+    {"slug": "boston-globe", "title": "The Boston Globe", "filename": "boston_globe_print_edition.recipe", "renew_interval_days": 1, "retention_days": 14},
+    {"slug": "la-times", "title": "LA Times", "filename": "latimes.recipe", "renew_interval_days": 1, "retention_days": 14},
 ]
 
 
@@ -71,10 +71,32 @@ def seed_curated_recipes():
     return recipes
 
 
-def _recipe_cache_path(recipe):
-    if recipe.recipe_path:
-        return Path(recipe.recipe_path)
+def _portable_recipe_cache_path(recipe):
     return Path(settings.PERIODICAL_RECIPE_DIR) / f"{recipe.slug}.recipe"
+
+
+def _recipe_cache_path(recipe):
+    fallback = _portable_recipe_cache_path(recipe)
+    if not recipe.recipe_path:
+        return fallback
+
+    path = Path(recipe.recipe_path)
+    if not path.is_absolute():
+        return _archive_path(path)
+
+    try:
+        if path.is_relative_to(settings.PERIODICAL_ARCHIVE_DIR):
+            return path
+    except AttributeError:
+        try:
+            path.relative_to(settings.PERIODICAL_ARCHIVE_DIR)
+            return path
+        except ValueError:
+            pass
+    except ValueError:
+        pass
+
+    return fallback
 
 
 def _relative_to_archive(path):
@@ -107,7 +129,7 @@ def _download_recipe(recipe, force=False):
         raise PeriodicalError(f"Recipe download failed: {exc}") from exc
 
     path.write_bytes(payload)
-    recipe.recipe_path = str(path)
+    recipe.recipe_path = _relative_to_archive(path)
     recipe.last_checked_at = timezone.now()
     recipe.last_status = "ready"
     recipe.last_message = "Recipe cached."

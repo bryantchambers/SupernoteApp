@@ -18,7 +18,7 @@ from .services import crawl_supernote_directory, perform_supernote_sync
 from .ai_service import AIService
 from .views import toggle_archive_status, trigger_sync, process_with_ai, process_with_ai_custom, download_ai, recycle_file_node, restore_file_from_recycle, empty_recycle_bin, zotero_add_to_device, zotero_remove_from_device, zotero_return_note_submit, zotero_recycle_item, zotero_restore_item, zotero_empty_bin, zotero_recycle_bin, periodical_fetch_now, periodicals_fetch_due
 from .zotero_service import sync_zotero_library, add_item_to_device, remove_item_from_device, move_item_to_recycle_bin, restore_item_from_recycle_bin, empty_recycle_bin_item, return_note_to_zotero, ZoteroSyncError
-from .periodical_service import fetch_periodical, send_issue_to_device, remove_issue_from_device, seed_curated_recipes, flatten_news_device_folder, PeriodicalError
+from .periodical_service import _download_recipe, _recipe_cache_path, fetch_periodical, send_issue_to_device, remove_issue_from_device, seed_curated_recipes, flatten_news_device_folder, PeriodicalError
 
 
 class SupernoteSyncTests(TestCase):
@@ -883,6 +883,8 @@ class PeriodicalIntegrationTests(TestCase):
         seed_curated_recipes()
         self.assertGreaterEqual(PeriodicalRecipe.objects.count(), 7)
         self.assertTrue(PeriodicalRecipe.objects.filter(slug='bbc-news').exists())
+        self.assertEqual(PeriodicalRecipe.objects.get(slug='la-times').recipe_url, 'https://raw.githubusercontent.com/kovidgoyal/calibre/master/recipes/latimes.recipe')
+        self.assertEqual(PeriodicalRecipe.objects.get(slug='boston-globe').recipe_url, 'https://raw.githubusercontent.com/kovidgoyal/calibre/master/recipes/boston_globe_print_edition.recipe')
 
     def test_fetch_periodical_runs_ebook_convert_and_creates_issue(self):
         recipe = self._recipe()
@@ -913,6 +915,39 @@ class PeriodicalIntegrationTests(TestCase):
         self.assertEqual(command[0], 'ebook-convert')
         self.assertIn('--output-profile', command)
         self.assertIn('generic_eink', command)
+
+    def test_recipe_cache_path_ignores_unportable_absolute_path(self):
+        recipe = self._recipe()
+        recipe.recipe_path = '/home/bryantchambers/ARCHIVE/periodicals/recipes/bbc.recipe'
+
+        with override_settings(PERIODICAL_ARCHIVE_DIR=self.archive_dir, PERIODICAL_RECIPE_DIR=self.archive_dir / 'recipes'):
+            path = _recipe_cache_path(recipe)
+
+        self.assertEqual(path, self.archive_dir / 'recipes' / f'{recipe.slug}.recipe')
+
+    def test_download_recipe_stores_portable_relative_path(self):
+        recipe = self._recipe()
+        recipe.recipe_path = ''
+        recipe.save(update_fields=['recipe_path'])
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b'recipe-bytes'
+
+        with override_settings(PERIODICAL_ARCHIVE_DIR=self.archive_dir, PERIODICAL_RECIPE_DIR=self.archive_dir / 'recipes'):
+            with patch('files.periodical_service.urlrequest.urlopen', return_value=FakeResponse()):
+                path = _download_recipe(recipe, force=True)
+
+        recipe.refresh_from_db()
+        expected_name = f'{recipe.slug}.recipe'
+        self.assertEqual(path, self.archive_dir / 'recipes' / expected_name)
+        self.assertEqual(recipe.recipe_path, f'recipes/{expected_name}')
 
     def test_fetch_periodical_surfaces_missing_calibre(self):
         recipe = self._recipe()

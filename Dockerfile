@@ -21,6 +21,7 @@ RUN apt-get update \
         libegl1 \
         libfontconfig1 \
         libgl1 \
+        libopengl0 \
         libxkbcommon0 \
         pkg-config \
         sqlite3 \
