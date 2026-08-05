@@ -22,7 +22,7 @@ services:
       - ${STATE_DIR}/data:/data
       - ${STATE_DIR}/config:/config
       - ${STATE_DIR}/backups:/backups
-      - static_data:/static
+      - ${STATE_DIR}/static:/static
     restart: unless-stopped
     init: true
     shm_size: 512m
@@ -46,10 +46,8 @@ services:
       - "${BIND_ADDRESS:-0.0.0.0}:${APP_PORT:-8000}:80"
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - static_data:/static:ro
+      - ${STATE_DIR}/static:/static:ro
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
 
-volumes:
-  static_data:

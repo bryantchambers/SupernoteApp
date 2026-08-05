@@ -68,7 +68,7 @@ esac
 
 install -d -m 0750 "${STATE_DIR}" "${STATE_DIR}/data" "${STATE_DIR}/data/ARCHIVE"
 install -d -m 0750 "${STATE_DIR}/data/PROCESSED_NOTES" "${STATE_DIR}/data/Supernote"
-install -d -m 0750 "${STATE_DIR}/config" "${STATE_DIR}/config/rclone" "${STATE_DIR}/backups"
+install -d -m 0750 "${STATE_DIR}/config" "${STATE_DIR}/config/rclone" "${STATE_DIR}/backups" "${STATE_DIR}/static"
 
 app_env="${STATE_DIR}/config/app.env"
 compose_env="${STATE_DIR}/config/compose.env"
@@ -139,9 +139,18 @@ if [[ -n "${IMPORT_RCLONE}" ]]; then
     install -m 0600 "${IMPORT_RCLONE}" "${STATE_DIR}/config/rclone/rclone.conf"
 fi
 
-chown -R 10001:10001 "${STATE_DIR}/data" "${STATE_DIR}/config" "${STATE_DIR}/backups"
+chown -R 10001:10001 "${STATE_DIR}/data" "${STATE_DIR}/config" "${STATE_DIR}/backups" "${STATE_DIR}/static"
 chmod 0600 "${app_env}" "${compose_env}"
 [[ ! -f "${STATE_DIR}/config/rclone/rclone.conf" ]] || chmod 0600 "${STATE_DIR}/config/rclone/rclone.conf"
+
+dump_startup_diagnostics() {
+    echo
+    echo "Startup failed. Current container status:" >&2
+    docker compose -f "${PROJECT_ROOT}/compose.yaml" ps >&2 || true
+    echo >&2
+    echo "Recent container logs:" >&2
+    docker compose -f "${PROJECT_ROOT}/compose.yaml" logs --tail=200 >&2 || true
+}
 
 export PROJECT_ROOT STATE_DIR APP_PORT BIND_ADDRESS
 export COMPOSE_ENV="${compose_env}"
@@ -150,10 +159,16 @@ set -a
 source "${compose_env}"
 set +a
 docker compose -f "${PROJECT_ROOT}/compose.yaml" build
-docker compose -f "${PROJECT_ROOT}/compose.yaml" up -d
+if ! docker compose -f "${PROJECT_ROOT}/compose.yaml" up -d; then
+    dump_startup_diagnostics
+    exit 1
+fi
 
 source "${PROJECT_ROOT}/deploy/common.sh"
-wait_for_health 120
+if ! wait_for_health 120; then
+    dump_startup_diagnostics
+    exit 1
+fi
 
 if [[ "${INITIAL_SYNC}" == true ]]; then
     if [[ ! -f "${STATE_DIR}/config/rclone/rclone.conf" ]]; then

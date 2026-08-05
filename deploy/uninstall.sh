@@ -24,7 +24,7 @@ if command -v systemctl >/dev/null; then
 fi
 
 if [[ -f "${COMPOSE_ENV}" && -f "${COMPOSE_FILE}" ]]; then
-    compose down --remove-orphans --volumes
+    compose down --remove-orphans
 fi
 
 if command -v systemctl >/dev/null; then

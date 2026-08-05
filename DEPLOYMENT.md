@@ -1,6 +1,6 @@
 # Raspberry Pi Deployment
 
-This deployment targets a 64-bit Raspberry Pi 5 and also builds on AMD64 development systems. Application code and containers are disposable; the database, archive, credentials, and backups live under /srv/supernote-app.
+This deployment targets a 64-bit Raspberry Pi 5 and also builds on AMD64 development systems. Application code and containers are disposable; the database, archive, credentials, backups, and collected static files live under the selected state directory.
 
 The Supernote mirror is not migrated or backed up. It is recreated with the initial OneDrive pull.
 
@@ -55,6 +55,7 @@ Install, import state, pull the OneDrive mirror, and enable scheduled jobs:
 
 ~~~bash
 sudo deploy/install.sh \
+  --state-dir /home/PI_USER/homelab/supernote-state \
   --port 8123 \
   --env /tmp/supernote-pi-import/app.env \
   --database /tmp/supernote-pi-import/db.sqlite3 \
@@ -65,7 +66,9 @@ sudo deploy/install.sh \
   --enable-timers
 ~~~
 
-Omit --processed when that directory does not exist. The ARM64 image is built locally, migrations run automatically, and the installer waits for health before starting the OneDrive pull.
+Use a writable host path for `--state-dir`. On Raspberry Pi systems with confined Docker installs, prefer a directory under `/home/...` instead of `/srv/...`.
+
+Omit `--processed` when that directory does not exist. The ARM64 image is built locally, migrations run automatically, and the installer now prints `docker compose ps` plus recent logs automatically if startup fails before health checks pass.
 
 Verify the result:
 
@@ -76,7 +79,7 @@ sudo docker compose \
   -f /opt/supernote-app/compose.yaml logs --tail=200
 ~~~
 
-Open http://PI_ADDRESS:8123/. Choose any unused host port with `--port`; the container continues to listen internally on port 80/8000 and only the host port is changed. The selected port is retained in `/srv/supernote-app/config/compose.env`.
+Open `http://PI_ADDRESS:8123/`. Choose any unused host port with `--port`; the container continues to listen internally on port 80/8000 and only the host port is changed. The selected port is retained in the state directory's `config/compose.env`.
 
 To change the port later:
 
@@ -97,7 +100,7 @@ Backups contain SQLite, ARCHIVE, PROCESSED_NOTES, and configuration. They delibe
 
 ~~~bash
 sudo /opt/supernote-app/deploy/backup.sh
-sudo /opt/supernote-app/deploy/restore.sh /srv/supernote-app/backups/BACKUP.tar.gz
+sudo /opt/supernote-app/deploy/restore.sh /home/PI_USER/homelab/supernote-state/backups/BACKUP.tar.gz
 ~~~
 
 Copy backups off the Pi periodically. A backup stored only on the Pi does not protect against storage failure.
@@ -114,7 +117,7 @@ A tag can be supplied instead of main. The updater refuses dirty installations, 
 
 ## Remove Or Roll Back
 
-The uninstall script is run on the Raspberry Pi host as root. It is located in the host checkout at `/opt/supernote-app/deploy/uninstall.sh`; it is not inside the application container. It stops the containers, removes systemd units and the container's named static volume, then removes the disposable host checkout. It preserves `/srv/supernote-app` by default:
+The uninstall script is run on the Raspberry Pi host as root. It is located in the host checkout at `/opt/supernote-app/deploy/uninstall.sh`; it is not inside the application container. It stops the containers, removes systemd units, then removes the disposable host checkout. It preserves the selected state directory by default:
 
 ~~~bash
 sudo /opt/supernote-app/deploy/uninstall.sh
