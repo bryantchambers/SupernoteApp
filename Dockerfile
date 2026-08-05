@@ -64,5 +64,5 @@ USER app
 
 EXPOSE 8000
 
-ENTRYPOINT ["/app/deploy/entrypoint.sh"]
+ENTRYPOINT ["/bin/sh", "/app/deploy/entrypoint.sh"]
 CMD ["gunicorn", "supernote_project.wsgi:application", "--bind=0.0.0.0:8000", "--workers=1", "--threads=4", "--timeout=1000", "--access-logfile=-", "--error-logfile=-"]
