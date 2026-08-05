@@ -24,7 +24,6 @@ services:
       - ${STATE_DIR}/backups:/backups
       - ${STATE_DIR}/static:/static
     restart: unless-stopped
-    init: true
     shm_size: 512m
     security_opt:
       - no-new-privileges:true
