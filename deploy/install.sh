@@ -146,8 +146,11 @@ chmod 0600 "${app_env}" "${compose_env}"
 export PROJECT_ROOT STATE_DIR APP_PORT BIND_ADDRESS
 export COMPOSE_ENV="${compose_env}"
 export COMPOSE_FILE="${PROJECT_ROOT}/compose.yaml"
-docker compose --env-file "${compose_env}" -f "${PROJECT_ROOT}/compose.yaml" build
-docker compose --env-file "${compose_env}" -f "${PROJECT_ROOT}/compose.yaml" up -d
+set -a
+source "${compose_env}"
+set +a
+docker compose -f "${PROJECT_ROOT}/compose.yaml" build
+docker compose -f "${PROJECT_ROOT}/compose.yaml" up -d
 
 source "${PROJECT_ROOT}/deploy/common.sh"
 wait_for_health 120

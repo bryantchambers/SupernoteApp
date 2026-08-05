@@ -8,8 +8,6 @@ services:
         CALIBRE_VERSION: ${CALIBRE_VERSION:-9.11.0}
         RCLONE_RELEASE: ${RCLONE_RELEASE:-1.74.4}
     image: ${SUPERNOTE_IMAGE:-supernote-app:local}
-    env_file:
-      - ${STATE_DIR}/config/app.env
     environment:
       SUPERNOTE_DATA_DIR: /data
       SUPERNOTE_DATABASE_PATH: /data/db.sqlite3

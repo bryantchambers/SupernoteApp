@@ -6,4 +6,5 @@ After=supernote-app.service network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=@PROJECT_ROOT@
-ExecStart=/usr/bin/docker compose --env-file @STATE_DIR@/config/compose.env -f @PROJECT_ROOT@/compose.yaml exec -T web python manage.py fetch_periodicals --due --push
+EnvironmentFile=@STATE_DIR@/config/compose.env
+ExecStart=/usr/bin/docker compose -f @PROJECT_ROOT@/compose.yaml exec -T web python manage.py fetch_periodicals --due --push
