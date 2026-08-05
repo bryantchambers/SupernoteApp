@@ -68,6 +68,8 @@ sudo deploy/install.sh \
 
 Use a writable host path for `--state-dir`. On Raspberry Pi systems with confined Docker installs, prefer a directory under `/home/...` instead of `/srv/...`.
 
+On Ubuntu Core systems using the Snap Docker package, `no-new-privileges:true` can prevent even `/bin/sh` from executing inside ordinary containers. The deployment stack does not use that hardening flag so it remains compatible with that runtime.
+
 Omit `--processed` when that directory does not exist. The ARM64 image is built locally, migrations run automatically, and the installer now prints `docker compose ps` plus recent logs automatically if startup fails before health checks pass.
 
 Verify the result:
