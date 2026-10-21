@@ -25,6 +25,7 @@ check "HTTP health" curl --fail --silent --max-time 5 "http://127.0.0.1:${APP_PO
 check "Django" compose exec -T web python manage.py check
 check "Supernote tool" compose exec -T web supernote-tool --help
 check "Calibre" compose exec -T web ebook-convert --version
+check "Calibre news browser modules" compose exec -T web calibre-debug -c "from calibre.web.automate.bot_check import retry_bot_checks; from calibre.web.automate.camoufox import Browser"
 check "Rclone" compose exec -T web rclone version
 
 if [[ "${failures}" -gt 0 ]]; then

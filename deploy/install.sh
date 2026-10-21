@@ -107,13 +107,19 @@ set_env SUPERNOTE_SOURCE /data/Supernote
 set_env SUPERNOTE_ARCHIVE_DIR /data/ARCHIVE
 set_env SUPERNOTE_PROCESSED_DIR /data/PROCESSED_NOTES
 set_env SUPERNOTE_TOOL_COMMAND supernote-tool
+if ! grep -q '^PLANNER_PUBLIC_ORIGIN=' "${app_env}"; then
+    set_env PLANNER_PUBLIC_ORIGIN "https://$(hostname -I | awk '{print $1}'):8443"
+fi
 
 cat >"${compose_env}" <<COMPOSE_ENV
 STATE_DIR=${STATE_DIR}
 APP_PORT=${APP_PORT}
 BIND_ADDRESS=${BIND_ADDRESS}
 SUPERNOTE_IMAGE=supernote-app:local
-CALIBRE_VERSION=9.11.0
+CALIBRE_VERSION=9.16.0
+PLANNER_HTTPS_HOST=$(hostname -s)
+PLANNER_HTTPS_PORT=8443
+PLANNER_HTTPS_IP=$(hostname -I | awk '{print $1}')
 RCLONE_RELEASE=1.74.4
 COMPOSE_ENV
 chmod 0600 "${compose_env}"

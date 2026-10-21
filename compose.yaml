@@ -5,7 +5,7 @@ services:
     build:
       context: .
       args:
-        CALIBRE_VERSION: ${CALIBRE_VERSION:-9.11.0}
+        CALIBRE_VERSION: ${CALIBRE_VERSION:-9.16.0}
         RCLONE_RELEASE: ${RCLONE_RELEASE:-1.74.4}
     image: ${SUPERNOTE_IMAGE:-supernote-app:local}
     environment:
@@ -17,6 +17,8 @@ services:
       SUPERNOTE_SYNC_LOCK_FILE: /data/.sync/supernote.lock
       SUPERNOTE_ENV_FILE: /config/app.env
       SUPERNOTE_STATIC_ROOT: /static
+      CALIBRE_CACHE_DIRECTORY: /data/.cache/calibre
+      XDG_DATA_HOME: /data/.local/share
       RCLONE_CONFIG: /config/rclone/rclone.conf
     volumes:
       - ${STATE_DIR}/data:/data
@@ -36,13 +38,36 @@ services:
 
   proxy:
     image: caddy:2.10-alpine
+    environment:
+      PLANNER_HTTPS_HOST: ${PLANNER_HTTPS_HOST:-supernote.local}
+      PLANNER_HTTPS_PORT: ${PLANNER_HTTPS_PORT:-8443}
+      PLANNER_HTTPS_IP: ${PLANNER_HTTPS_IP:-127.0.0.1}
+      PLANNER_TAILSCALE_HOST: ${PLANNER_TAILSCALE_HOST:-supernote-tailnet.invalid}
+      PLANNER_TAILSCALE_IP: ${PLANNER_TAILSCALE_IP:-127.0.0.2}
     depends_on:
       web:
         condition: service_healthy
     ports:
       - "${BIND_ADDRESS:-0.0.0.0}:${APP_PORT:-8000}:80"
+      - "${BIND_ADDRESS:-0.0.0.0}:${PLANNER_HTTPS_PORT:-8443}:443"
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ${STATE_DIR}/static:/static:ro
+      - ${STATE_DIR}/config/planner-caddy:/data
+    restart: unless-stopped
+
+  planner-worker:
+    image: ${SUPERNOTE_IMAGE:-supernote-app:local}
+    entrypoint: ["python", "manage.py", "planner_worker"]
+    environment:
+      SUPERNOTE_DATA_DIR: /data
+      SUPERNOTE_DATABASE_PATH: /data/db.sqlite3
+      SUPERNOTE_ENV_FILE: /config/app.env
+    volumes:
+      - ${STATE_DIR}/data:/data
+      - ${STATE_DIR}/config:/config:ro
+    depends_on:
+      web:
+        condition: service_healthy
     restart: unless-stopped
 

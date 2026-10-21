@@ -2,7 +2,7 @@
 FROM python:3.12-slim-bookworm
 
 ARG TARGETARCH
-ARG CALIBRE_VERSION=9.11.0
+ARG CALIBRE_VERSION=9.16.0
 ARG RCLONE_RELEASE=1.74.4
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -17,7 +17,11 @@ RUN apt-get update \
         build-essential \
         ca-certificates \
         curl \
+        libasound2 \
         libdbus-1-3 \
+        libgtk-3-0 \
+        libnss3 \
+        libxtst6 \
         libegl1 \
         libfontconfig1 \
         libgl1 \
@@ -55,7 +59,8 @@ COPY requirements-container.txt .
 RUN python -m pip install --no-cache-dir -r requirements-container.txt
 
 COPY . .
-RUN python manage.py check && supernote-tool --version
+RUN python manage.py check && supernote-tool --version \
+    && calibre-debug -c "from calibre.web.automate.bot_check import retry_bot_checks; from calibre.web.automate.camoufox import Browser"
 RUN useradd --create-home --uid 10001 app \
     && mkdir -p /data /config /backups /static \
     && chown -R app:app /data /config /backups /static /home/app \

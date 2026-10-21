@@ -99,6 +99,15 @@ def _current_source_path(node):
     return source_base / node.path
 
 
+def _protect_planner(node):
+    # Protect ancestors too: archiving Note/ would move the active planner with it.
+    from pathlib import PurePosixPath
+    value = PurePosixPath(node.path)
+    reserved = PurePosixPath('Note/Planner')
+    if value == reserved or reserved in value.parents or value in reserved.parents:
+        raise RuntimeError('Planner notebooks are managed on the device. Download a backup instead of moving or deleting this folder.')
+
+
 def _ensure_parent(path):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
 
@@ -125,6 +134,7 @@ def _create_readable_archive_copy(node, archive_full_path):
 
 
 def archive_file_node(node):
+    _protect_planner(node)
     source_path = _live_full_path(node)
     archive_path = _archive_full_path(node)
     _ensure_parent(archive_path)
@@ -160,6 +170,7 @@ def archive_file_node(node):
 
 
 def restore_file_node(node):
+    _protect_planner(node)
     source_path = _live_full_path(node)
     archive_path = _archive_full_path(node)
     _ensure_parent(source_path)
@@ -179,6 +190,7 @@ def restore_file_node(node):
 
 
 def move_file_node_to_recycle(node):
+    _protect_planner(node)
     source_path = _current_source_path(node)
     recycle_path = _recycle_full_path(node)
     _ensure_parent(recycle_path)
@@ -213,6 +225,7 @@ def move_file_node_to_recycle(node):
 
 
 def restore_file_node_from_recycle(node):
+    _protect_planner(node)
     recycle_path = _recycle_full_path(node)
     destination_path = _archive_full_path(node) if node.recycle_source_is_archived else _live_full_path(node)
     _ensure_parent(destination_path)
@@ -251,6 +264,7 @@ def restore_file_node_from_recycle(node):
 
 
 def empty_file_recycle_bin_item(node):
+    _protect_planner(node)
     recycle_path = _recycle_full_path(node)
     readable_recycle = _recycle_readable_path(node)
     if recycle_path.exists():
@@ -346,8 +360,20 @@ def run_rclone_sync(direction="pull"):
     remote = settings.SUPERNOTE_REMOTE
 
     if direction == "push":
-        command = ["rclone", "sync", source_dir, remote]
+        command = ["rclone", "sync", source_dir, remote, "--exclude", "/Note/Planner/**"]
     else:
+        # Native planner files are device-owned. Preserve immutable incoming history
+        # before rclone replaces or removes a mirrored revision.
+        planner_dir = Path(source_dir) / 'Note' / 'Planner'
+        history = Path(settings.ARCHIVE_DIR) / 'planner-versions'
+        if planner_dir.exists():
+            history.mkdir(parents=True, exist_ok=True)
+            for path in planner_dir.rglob('*'):
+                if path.is_file():
+                    digest = get_file_hash(path)
+                    target = history / (digest + path.suffix)
+                    if digest and not target.exists():
+                        shutil.copy2(path, target)
         command = ["rclone", "sync", remote, source_dir]
 
     result = subprocess.run(command, capture_output=True, text=True)

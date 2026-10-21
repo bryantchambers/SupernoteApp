@@ -13,6 +13,7 @@ from .zotero_service import sync_zotero_library, get_zotero_state, add_item_to_d
 from .periodical_service import delete_issue, fetch_due_periodicals, fetch_periodical, remove_issue_from_device, seed_curated_recipes, send_issue_to_device, update_recipe, PeriodicalError
 from .settings_service import database_export_name, is_service_enabled, require_service_enabled, settings_context, test_service, update_env_from_post, update_service_flags_from_post
 import os
+from pathlib import Path
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 
 
@@ -588,10 +589,13 @@ def upload_file(request):
         target_path = request.POST.get('path', '')
         
         # Determine upload directory (only allow Document/MyStyle)
-        if not (target_path.startswith('Document') or target_path.startswith('MyStyle')):
+        source_root = Path(settings.SUPERNOTE_SOURCE).resolve()
+        upload_target = (source_root / target_path).resolve()
+        allowed_roots = [(source_root / name).resolve() for name in ('Document', 'MyStyle')]
+        if not any(upload_target == root or root in upload_target.parents for root in allowed_roots):
             return JsonResponse({'error': 'Invalid upload directory'}, status=400)
             
-        upload_dir = os.path.join(settings.SUPERNOTE_SOURCE, target_path)
+        upload_dir = str(upload_target)
         os.makedirs(upload_dir, exist_ok=True)
         
         file_path = os.path.join(upload_dir, file.name)

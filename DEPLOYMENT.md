@@ -96,6 +96,12 @@ Open http://PI_ADDRESS:8124/.
 
 After verification, disable scheduled synchronization on the heavy-lift system. Only one installation should push or automatically synchronize the same remote.
 
+## Calibre News Recipes
+
+The web image includes its own Calibre 9.16.0 under `/opt/calibre`; the host's Calibre is independent. Economist recipes using Camoufox require this newer runtime. Existing installations must also change `CALIBRE_VERSION=9.11.0` to `CALIBRE_VERSION=9.16.0` in their state directory's `config/compose.env` before rebuilding. Recreating the container is required; restarting an old container does not update Calibre.
+
+Camoufox downloads its browser on first use. The container includes the Linux browser libraries and stores downloaded binaries under `/data/.local/share/calibre-dbin` and its cache under `/data/.cache/calibre`, so both survive container replacement. The first fetch needs network access and additional download time. `deploy/doctor.sh` checks the required Calibre news browser modules.
+
 ## Back Up And Restore
 
 Backups contain SQLite, ARCHIVE, PROCESSED_NOTES, and configuration. They deliberately exclude the Supernote mirror.
@@ -143,3 +149,7 @@ sudo /opt/supernote-app/deploy/uninstall.sh --purge-data
 ~~~
 
 Docker itself is never removed because it may be shared by other homelab services.
+
+## Daily Planner
+
+The integrated `/planner/` module has a separate sync worker and private HTTPS endpoint. See [planner deployment and device acceptance](docs/PLANNER.md). Google writes default to disabled until the A6X hardware checks pass.

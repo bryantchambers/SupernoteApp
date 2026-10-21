@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block content %}
+<link rel="stylesheet" href="{% static 'planner/planner.css' %}">
+<div id="daily-planner">
+<div class="max-w-2xl mx-auto bg-white border rounded-xl p-8 space-y-5">
+<h1 class="text-2xl font-semibold">Connect your A6X</h1>
+<p>This credential connects the planner plugin to <strong>{{ book.title }}</strong>. Copy it now; it will not be displayed again.</p>
+<dl class="space-y-3"><dt>Server</dt><dd><code>{{ origin }}</code></dd><dt>Planner ID</dt><dd><code>{{ book.pk }}</code></dd><dt>Device credential</dt><dd class="break-all"><code>{{ token }}</code></dd></dl>
+<p class="text-slate-500">Device changes remain in review until the hardware acceptance checks pass. Requires Chauvet 2.27.42 and the planner plugin.</p>
+<a href="{% url 'planner:dashboard' %}" class="text-indigo-600">Return to planner</a>
+</div>
+</div>
+{% endblock %}

@@ -1,0 +1,23 @@
+/* Module styles are self-contained: no additional frontend build dependencies. */
+.planner-paper{background:#fffef9;color:#252c2d;border:1px solid #e3e3db;box-shadow:0 8px 28px #15202b08;padding:28px;min-height:780px;border-radius:3px}
+.planner-day{min-height:158px;border-top:1px solid #d9dcd6;padding:13px 0 10px}
+.planner-capture{height:52px;background:repeating-linear-gradient(transparent,transparent 25px,#e5e7df 26px);margin-top:8px}
+.planner-form input,.planner-form select,.planner-form textarea{border:1px solid #cbd5e1;border-radius:6px;padding:7px;width:100%;background:white}
+.planner-form p{margin-bottom:12px}.planner-form label{display:block;font-size:12px;color:#64748b;margin-bottom:4px}.planner-form input[type=checkbox],.planner-form input[type=radio]{width:auto}
+.planner-entry{padding:5px 0;border-bottom:1px dotted #e1e2dc;font-size:13px}.planner-muted{font-size:11px;letter-spacing:.06em;color:#7b827a}
+.planner-paper:has(.device-paper) .planner-capture{display:none}.planner-paper:has(.device-paper) .planner-day{min-height:0}
+.planner-button{display:inline-block;padding:9px 14px;border:1px solid #cbd5e1;border-radius:8px;background:white;font-size:13px;cursor:pointer}.planner-button:hover{border-color:#6366f1}
+#daily-planner .rounded-xl{border-radius:12px}#daily-planner .flex-wrap{flex-wrap:wrap}#daily-planner .items-start{align-items:flex-start}#daily-planner .cursor-pointer{cursor:pointer}
+#daily-planner .grid-cols-1{grid-template-columns:minmax(0,1fr)}#daily-planner .grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}#daily-planner .grid-cols-7{grid-template-columns:repeat(7,minmax(0,1fr))}
+#daily-planner .gap-1{gap:.25rem}#daily-planner .gap-2{gap:.5rem}#daily-planner .gap-3{gap:.75rem}#daily-planner .gap-4{gap:1rem}#daily-planner .gap-5{gap:1.25rem}#daily-planner .gap-6{gap:1.5rem}#daily-planner .gap-8{gap:2rem}
+#daily-planner .max-w-md{max-width:28rem}#daily-planner .max-w-2xl{max-width:42rem}#daily-planner .w-32{width:8rem}#daily-planner .break-all{overflow-wrap:anywhere}
+#daily-planner .mb-2{margin-bottom:.5rem}#daily-planner .mb-3{margin-bottom:.75rem}#daily-planner .mb-5{margin-bottom:1.25rem}#daily-planner .mb-6{margin-bottom:1.5rem}#daily-planner .mb-7{margin-bottom:1.75rem}
+#daily-planner .mt-1{margin-top:.25rem}#daily-planner .mt-6{margin-top:1.5rem}#daily-planner .mt-7{margin-top:1.75rem}#daily-planner .ml-2{margin-left:.5rem}#daily-planner .my-2{margin-block:.5rem}#daily-planner .my-3{margin-block:.75rem}
+#daily-planner .p-1{padding:.25rem}#daily-planner .p-5{padding:1.25rem}#daily-planner .p-6{padding:1.5rem}#daily-planner .pt-3{padding-top:.75rem}
+#daily-planner .text-3xl{font-size:1.875rem;line-height:1.2}#daily-planner .text-xl{font-size:1.25rem}#daily-planner .text-right{text-align:right}#daily-planner .tracking-tight{letter-spacing:-.025em}#daily-planner .tracking-widest{letter-spacing:.1em}
+#daily-planner .bg-indigo-50{background:#eef2ff}#daily-planner .border-indigo-100{border-color:#e0e7ff}#daily-planner .text-indigo-600{color:#4f46e5}#daily-planner .text-red-700{color:#b91c1c}
+#daily-planner .space-y-3>*+*{margin-top:.75rem}#daily-planner .space-y-5>*+*{margin-top:1.25rem}
+@media(min-width:768px){#daily-planner .md\:grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(min-width:1024px){#daily-planner .lg\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}#daily-planner .lg\:grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(min-width:1280px){#daily-planner .xl\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:480px){.planner-paper{padding:18px}.planner-paper h3{font-size:1rem}}

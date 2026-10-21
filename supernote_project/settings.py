@@ -83,6 +83,7 @@ INSTALLED_APPS = [
     'theme',
     'django_htmx',
     'files',
+    'planner',
 ]
 
 MIDDLEWARE = [
@@ -130,6 +131,15 @@ SUPERNOTE_SYNC_LOCK_FILE = Path(
     os.environ.get("SUPERNOTE_SYNC_LOCK_FILE", DATA_DIR / ".sync" / "supernote.lock")
 )
 SUPERNOTE_SYNC_INTERVAL_MINUTES = 10
+LOGIN_URL = '/planner/login/'
+LOGIN_REDIRECT_URL = '/planner/'
+# Only Caddy publishes web access; it supplies the original protocol header.
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+PLANNER_GOOGLE_CLIENT_ID = os.environ.get('PLANNER_GOOGLE_CLIENT_ID', '')
+PLANNER_GOOGLE_CLIENT_SECRET = os.environ.get('PLANNER_GOOGLE_CLIENT_SECRET', '')
+PLANNER_GOOGLE_REDIRECT_URI = os.environ.get('PLANNER_GOOGLE_REDIRECT_URI', 'http://localhost:8123/planner/google/callback/')
+PLANNER_GOOGLE_WRITES_ENABLED = os.environ.get('PLANNER_GOOGLE_WRITES_ENABLED', 'false').lower() == 'true'
+PLANNER_PUBLIC_ORIGIN = os.environ.get('PLANNER_PUBLIC_ORIGIN', '')
 ARCHIVE_DIR = Path(os.environ.get("SUPERNOTE_ARCHIVE_DIR", DATA_DIR / "ARCHIVE"))
 PROCESSED_MD_DIR = Path(os.environ.get("SUPERNOTE_PROCESSED_DIR", DATA_DIR / "PROCESSED_NOTES"))
 SUPERNOTE_TOOL_COMMAND = os.environ.get("SUPERNOTE_TOOL_COMMAND", "supernote-tool")

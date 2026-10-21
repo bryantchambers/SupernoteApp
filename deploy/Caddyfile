@@ -1,3 +1,19 @@
+{
+    default_sni {$PLANNER_HTTPS_IP}
+}
+
+http://{$PLANNER_HTTPS_HOST}:80 {
+    redir https://{$PLANNER_HTTPS_HOST}:{$PLANNER_HTTPS_PORT}{uri} permanent
+}
+
+http://{$PLANNER_HTTPS_IP}:80 {
+    redir https://{$PLANNER_HTTPS_IP}:{$PLANNER_HTTPS_PORT}{uri} permanent
+}
+
+http://{$PLANNER_TAILSCALE_HOST}:80, http://{$PLANNER_TAILSCALE_IP}:80 {
+    redir https://{$PLANNER_TAILSCALE_HOST}:{$PLANNER_HTTPS_PORT}{uri} permanent
+}
+
 :80 {
     encode zstd gzip
 
@@ -6,5 +22,15 @@
         file_server
     }
 
+    reverse_proxy web:8000
+}
+
+https://{$PLANNER_HTTPS_HOST}:443, https://{$PLANNER_HTTPS_IP}:443, https://{$PLANNER_TAILSCALE_HOST}:443 {
+    tls internal
+    encode zstd gzip
+    handle_path /static/* {
+        root * /static
+        file_server
+    }
     reverse_proxy web:8000
 }

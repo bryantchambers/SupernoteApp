@@ -1,0 +1,11 @@
+{
+  "name": "Supernote Planner",
+  "pluginKey": "SupernotePlanner",
+  "pluginID": "snp2027a6x000001",
+  "iconPath": "assets/planner.png",
+  "desc": "Connect your handwritten planner to your Supernote web app",
+  "versionCode": "7",
+  "versionName": "0.1.6",
+  "jsMainPath": "index",
+  "uses-permissions": ["plugin.permission.FILE:READ", "plugin.permission.FILE:WRITE", "plugin.permission.INTERNET"]
+}
