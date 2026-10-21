@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Review handwriting · Supernote{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{% static 'planner/planner.css' %}">
+<div id="daily-planner">
+<section class="bg-white rounded-xl border border-slate-200 p-6 max-w-2xl mx-auto">
+  <a class="planner-button mb-5" href="{% url 'planner:dashboard' %}?book={{ book.pk }}">← Back to planner</a>
+  <h1 class="text-2xl font-semibold mb-4">Review handwriting</h1>
+  <p class="text-sm text-slate-500 mb-2">Recognized text</p>
+  <blockquote class="border rounded p-3 mb-5">{{ operation.payload.text|default:'No text recognized' }}</blockquote>
+  <p class="text-sm text-slate-500 mb-5">Correct the details below, then choose a calendar or task list. Choose Planner only to keep the entry in this app.</p>
+  <form class="planner-form" method="post" action="{% url 'planner:review' operation.pk %}">
+    {% csrf_token %}
+    {{ form.as_p }}
+    {% if not google_sync_ready %}<p class="text-sm text-slate-500">Google sync is paused. Entries assigned to a calendar or task list will stay queued until sync is enabled.</p>{% endif %}
+    <div class="flex flex-wrap gap-3 mt-4">
+      <button class="planner-button" name="action" value="accept_capture">Accept entry</button>
+      <a class="planner-button" href="{% url 'planner:dashboard' %}?book={{ book.pk }}">Cancel</a>
+    </div>
+  </form>
+</section>
+</div>
+{% endblock %}

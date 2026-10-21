@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <title>Supernote notebook</title>
+  <rect width="512" height="512" fill="#f6f3eb"/>
+  <g transform="translate(4 0) rotate(-9 256 256)">
+    <rect x="137" y="100" width="238" height="328" rx="20" fill="#17232d" opacity=".12"/>
+    <rect x="137" y="88" width="238" height="328" rx="18" fill="#263846"/>
+    <path d="M155 88h26v328h-26c-10 0-18-8-18-18V106c0-10 8-18 18-18Z" fill="#182a36"/>
+    <path d="M183 108v278" fill="none" stroke="#52636b" stroke-width="3"/>
+    <path d="M213 168h116m-116 29h116m-116 29h82" fill="none" stroke="#f6f3eb" stroke-width="7" stroke-linecap="round"/>
+    <path d="M159 390h198v12H159c-4 0-7-3-7-6s3-6 7-6Z" fill="#e4dfd2"/>
+    <path d="M312 336h23v88l-11.5-9-11.5 9Z" fill="#bc7755"/>
+  </g>
+</svg>

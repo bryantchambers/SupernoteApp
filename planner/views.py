@@ -19,13 +19,37 @@ from django.http import FileResponse, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST, require_GET
+from django.views.decorators.http import require_POST, require_GET, require_http_methods
 from . import google
 from .artifacts import generate_pdf, root
 from .forms import BookForm, ItemForm
 from .layout import holidays, manifest
 from .models import Book, Calendar, Connection, Device, Item, Operation, PageSnapshot
 from .services import device_changes, encode_item, pair, save_item
+from .recognition import parse_entry
+
+
+def is_capture_review(op):
+    return op.status == 'review' and op.source == 'device' and not op.item_id and op.payload.get('action', 'capture') == 'capture'
+
+
+def capture_initial(op):
+    raw = op.payload
+    initial = {'kind': 'event', 'title': str(raw.get('text', ''))[:250], 'day': op.book.start}
+    try:
+        initial['day'] = date.fromisoformat(raw.get('day', ''))
+    except (ValueError, TypeError):
+        pass
+    try:
+        parsed = parse_entry(raw.get('text', ''), initial['day'], op.book.timezone)
+    except (ValueError, TypeError, AttributeError):
+        return initial
+    alias = parsed.pop('alias')
+    initial.update(parsed)
+    if alias:
+        initial['calendar'] = Calendar.objects.filter(connection__owner=op.book.owner, selected=True, writable=True,
+            kind=parsed['kind'], alias=alias).values_list('pk', flat=True).first()
+    return initial
 
 
 @login_required
@@ -72,6 +96,9 @@ def dashboard(request):
                        item_form=ItemForm(book=book, initial={'day': max(book.start, day)}), day=day,
                        reviews=Operation.objects.filter(book=book, status__in=['review', 'conflict']).order_by('-created_at')[:50],
                        devices=Device.objects.filter(book=book), pending=Operation.objects.filter(book=book, status='pending').count())
+        context['reviews'] = list(context['reviews'])
+        for op in context['reviews']:
+            op.capture_review = is_capture_review(op)
     return render(request, 'planner/dashboard.html', context)
 
 
@@ -231,9 +258,35 @@ def status(request, book_id):
 
 
 @login_required
-@require_POST
+@require_http_methods(['GET', 'POST'])
+@transaction.atomic
 def review(request, operation_id):
-    op = get_object_or_404(Operation, pk=operation_id, book__owner=request.user, status__in=['review', 'conflict'])
+    op = get_object_or_404(Operation.objects.select_related('book'), pk=operation_id, book__owner=request.user)
+    if request.method == 'POST':
+        Book.objects.select_for_update().get(pk=op.book_id)
+        op = Operation.objects.select_for_update().select_related('book').get(pk=op.pk)
+    if op.status not in ['review', 'conflict']:
+        messages.info(request, 'This proposal has already been reviewed.')
+        return redirect('/planner/?book=' + str(op.book_id))
+    if is_capture_review(op) and (request.method == 'GET' or request.POST.get('action') == 'accept_capture'):
+        form = ItemForm(request.POST if request.method == 'POST' else None, book=op.book, initial=capture_initial(op))
+        form.fields['calendar'].label = 'Calendar or task list'
+        form.fields['calendar'].empty_label = 'Planner only (no Google sync)'
+        if request.method == 'POST' and form.is_valid():
+            item = form.save(commit=False)
+            item.book = op.book
+            save_item(item)
+            op.item, op.status, op.message = item, 'accepted', 'Accepted after handwriting review.'
+            op.save(update_fields=['item', 'status', 'message'])
+            messages.success(request, 'Handwriting accepted. The entry is saved in your planner.' +
+                (' Google sync remains queued until calendar writes are enabled and the device is validated.'
+                 if item.calendar_id and (not settings.PLANNER_GOOGLE_WRITES_ENABLED or not Device.objects.filter(book=op.book, validated=True, revoked=False).exists())
+                 else ''))
+            return redirect('/planner/?book=' + str(op.book_id) + '&day=' + item.day.isoformat() + '#entry-' + str(item.pk))
+        return render(request, 'planner/review.html', {'book': op.book, 'operation': op, 'form': form,
+            'google_sync_ready': settings.PLANNER_GOOGLE_WRITES_ENABLED and Device.objects.filter(book=op.book, validated=True, revoked=False).exists()})
+    if request.method == 'GET':
+        return redirect('/planner/?book=' + str(op.book_id))
     if request.POST.get('action') == 'dismiss':
         if op.item_id:
             # Clear the old base so the same provider ETag can restore a cancelled

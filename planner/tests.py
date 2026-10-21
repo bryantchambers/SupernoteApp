@@ -29,6 +29,123 @@ class PlannerTests(TestCase):
         self.device.validated = True
         self.device.save()
 
+    def test_dashboard_renders_reviews_with_missing_payload_keys_and_escapes_handwriting(self):
+        self.client.force_login(self.user)
+        for payload, expected in [
+            ({'action': 'capture', 'text': '17:00 Dinner'}, '17:00 Dinner'),
+            ({'title': 'Meeting title'}, 'Meeting title'),
+            ({'action': 'cancel'}, 'cancel'),
+            ({}, 'Planner change'),
+            ({'text': '<script>alert(1)</script>'}, '&lt;script&gt;alert(1)&lt;/script&gt;'),
+        ]:
+            with self.subTest(payload=payload):
+                op = Operation.objects.create(book=self.book, source='device', status='review', payload=payload)
+                response = self.client.get('/planner/', {'book': self.book.pk})
+                self.assertContains(response, expected)
+                self.assertNotContains(response, '<script>alert(1)</script>')
+                op.delete()
+
+    def test_handwriting_review_prefills_entry_and_accepts_once_without_publishing(self):
+        self.device.validated = False
+        self.device.save()
+        raw = {'id': str(uuid.uuid4()), 'action': 'capture', 'day': '2027-01-05', 'text': '17:00 - 20:00 Dinner w/ - I'}
+        device_changes(self.device, [raw])
+        op = Operation.objects.get(pk=raw['id'])
+        self.client.force_login(self.user)
+        self.assertContains(self.client.get('/planner/'), 'Review &amp; accept')
+        page = self.client.get(f'/planner/review/{op.pk}/')
+        self.assertContains(page, 'Accept entry')
+        self.assertEqual(page.context['form'].initial['title'], 'Dinner w/ - I')
+        self.assertEqual(page.context['form'].initial['start_time'], '17:00:00')
+        self.assertEqual(page.context['form'].initial['calendar'], self.cal.pk)
+        data = {'action': 'accept_capture', 'kind': 'event', 'title': 'Dinner with friends',
+                'day': '2027-01-05', 'start_time': '17:00', 'end_time': '20:00', 'calendar': self.cal.pk}
+        with patch('planner.google.Client.request') as network:
+            self.assertEqual(self.client.post(f'/planner/review/{op.pk}/', data).status_code, 302)
+            self.assertEqual(self.client.post(f'/planner/review/{op.pk}/', data).status_code, 302)
+            network.assert_not_called()
+        op.refresh_from_db()
+        self.assertEqual(op.status, 'accepted')
+        self.assertEqual(op.payload, raw)
+        self.assertEqual(Item.objects.count(), 1)
+        self.assertEqual(op.item.title, 'Dinner with friends')
+        self.assertEqual(Operation.objects.filter(status='pending', item=op.item).count(), 1)
+        receipt = device_changes(self.device, [raw])[0]
+        self.assertEqual(receipt['item_id'], str(op.item_id))
+        self.assertEqual(Item.objects.count(), 1)
+
+    def test_capture_review_invalid_input_keeps_editable_form_and_proposal(self):
+        op = Operation.objects.create(book=self.book, source='device', status='review',
+            payload={'action': 'capture', 'text': 'Unclear note', 'day': '2027-01-05'})
+        foreign = Calendar.objects.create(connection=Connection.objects.create(owner=self.other), remote_id='foreign',
+            title='Other owner', kind='event', selected=True, writable=True)
+        self.client.force_login(self.user)
+        for change in ({'title': ''}, {'calendar': foreign.pk}, {'day': '2030-01-01'}, {'start_time': '18:00', 'end_time': '17:00'}):
+            with self.subTest(change=change):
+                data = {'action': 'accept_capture', 'kind': 'event', 'title': 'Corrected note', 'day': '2027-01-05', 'calendar': self.cal.pk}
+                data.update(change)
+                response = self.client.post(f'/planner/review/{op.pk}/', data)
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(response.context['form'].errors)
+                self.assertFalse(Item.objects.exists())
+                op.refresh_from_db()
+                self.assertEqual(op.status, 'review')
+        self.client.force_login(self.other)
+        self.assertEqual(self.client.get(f'/planner/review/{op.pk}/').status_code, 404)
+        self.assertEqual(self.client.post(f'/planner/review/{op.pk}/', data).status_code, 404)
+
+    def test_capture_review_supports_tasks_aliases_and_local_entries(self):
+        tasks = Calendar.objects.create(connection=self.connection, remote_id='tasks', title='Tasks', kind='task',
+            selected=True, writable=True, is_default=True, alias='chores')
+        op = Operation.objects.create(book=self.book, source='device', status='review',
+            payload={'action': 'capture', 'text': '[ ] Buy milk @chores', 'day': '2027-01-05'})
+        self.client.force_login(self.user)
+        form = self.client.get(f'/planner/review/{op.pk}/').context['form']
+        self.assertEqual(form.initial['kind'], 'task')
+        self.assertEqual(form.initial['calendar'], tasks.pk)
+        response = self.client.post(f'/planner/review/{op.pk}/', {'action': 'accept_capture', 'kind': 'task',
+            'title': 'Buy milk', 'day': '2027-01-05', 'calendar': '', 'completed': 'on'})
+        self.assertEqual(response.status_code, 302)
+        op.refresh_from_db()
+        self.assertTrue(op.item.completed)
+        self.assertIsNone(op.item.calendar_id)
+        self.assertEqual(Operation.objects.get(item=op.item, source='web').status, 'local')
+
+    def test_calendar_gates_keep_accepted_edits_pending_without_attempting_google_writes(self):
+        from .google import sync_connection
+        for enabled, validated in ((False, True), (True, False)):
+            with self.subTest(enabled=enabled), override_settings(PLANNER_GOOGLE_WRITES_ENABLED=enabled):
+                self.device.validated = validated
+                self.device.save()
+                item = save_item(Item(book=self.book, calendar=self.cal, kind='event', title='Reviewed entry', day=date(2027, 1, 5)))
+                op = Operation.objects.get(item=item)
+                with patch('planner.google.pull'), patch('planner.google.push') as network:
+                    sync_connection(self.connection)
+                    network.assert_not_called()
+                op.refresh_from_db()
+                self.assertEqual(op.status, 'pending')
+                self.assertEqual(op.attempts, 0)
+
+    def test_device_acceptance_requires_explicit_confirmed_sync_and_does_not_guess_firmware(self):
+        from django.core.management import call_command
+        from django.core.management.base import CommandError
+        self.device.validated = False
+        self.device.save()
+        with self.assertRaises(CommandError):
+            call_command('planner_accept_device', str(self.device.pk), confirm_roundtrip=True, stdout=io.StringIO())
+        self.device.last_seen = timezone.now()
+        self.device.acknowledged_revision = 1
+        self.device.save()
+        with self.assertRaises(CommandError):
+            call_command('planner_accept_device', str(self.device.pk), stdout=io.StringIO())
+        for firmware in ('2.26.39', '3.29.43', 'unknown'):
+            with self.subTest(firmware=firmware), self.assertRaises(CommandError):
+                call_command('planner_accept_device', str(self.device.pk), firmware=firmware, confirm_roundtrip=True, stdout=io.StringIO())
+        call_command('planner_accept_device', str(self.device.pk), confirm_roundtrip=True, stdout=io.StringIO())
+        self.device.refresh_from_db()
+        self.assertTrue(self.device.validated)
+        call_command('planner_accept_device', str(self.device.pk), firmware='2.28.42', confirm_roundtrip=True, stdout=io.StringIO())
+
     def test_pairing_file_is_owner_scoped_private_and_contains_only_device_connection(self):
         self.client.force_login(self.user)
         with tempfile.TemporaryDirectory() as temp, override_settings(DATA_DIR=Path(temp), PLANNER_PUBLIC_ORIGIN='https://planner.example:8443'):

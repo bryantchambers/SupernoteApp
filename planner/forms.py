@@ -36,7 +36,7 @@ class ItemForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.book = book
         self.fields['calendar'].queryset = Calendar.objects.filter(connection__owner=book.owner, selected=True, writable=True)
-        if not self.is_bound and self.instance._state.adding:
+        if not self.is_bound and self.instance._state.adding and 'calendar' not in self.initial:
             self.initial['calendar'] = self.fields['calendar'].queryset.filter(kind=self.initial.get('kind', 'event'), is_default=True).values_list('pk', flat=True).first()
 
     def clean(self):

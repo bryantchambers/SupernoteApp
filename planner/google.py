@@ -323,6 +323,10 @@ def sync_connection(connection):
     for op in Operation.objects.filter(book__owner=connection.owner, status='pending').select_related('item').order_by('created_at'):
         if not op.item_id:
             continue
+        if op.item.calendar_id and (not settings.PLANNER_GOOGLE_WRITES_ENABLED or
+                not Device.objects.filter(book=op.book, validated=True, revoked=False).exists()):
+            # A deployment/device gate is not a rejected proposal. Keep accepted edits queued.
+            continue
         # A single planner worker holds the process-level lock around this routine.
         op.attempts += 1
         op.save(update_fields=['attempts'])

@@ -4,6 +4,7 @@ from django.utils.safestring import mark_safe
 register = template.Library()
 
 ICON_PATHS = {
+    'calendar': '<rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M8 3v4M16 3v4M3 11h18"></path><path d="M8 15h2M14 15h2M8 18h2"></path>',
     'circle-dot': '<circle cx="12" cy="12" r="3"></circle><circle cx="12" cy="12" r="9"></circle>',
     'file-text': '<path d="M14 2H7a2 2 0 00-2 2v16a2 2 0 002 2h10a2 2 0 002-2V7z"></path><path d="M14 2v5h5"></path><path d="M9 13h6"></path><path d="M9 17h6"></path>',
     'palette': '<circle cx="12" cy="12" r="9"></circle><path d="M7.5 12a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"></path><path d="M13 8a1 1 0 11-2 0 1 1 0 012 0z"></path><path d="M17 11a1 1 0 11-2 0 1 1 0 012 0z"></path><path d="M15 16a1 1 0 11-2 0 1 1 0 012 0z"></path>',

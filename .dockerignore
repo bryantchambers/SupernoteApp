@@ -11,6 +11,7 @@ __pycache__
 *.sqlite3
 *.pdf
 *.png
+!files/static/app-icons/*.png
 *.jpg
 theme/static_src/node_modules
 deploy/*.tar.gz

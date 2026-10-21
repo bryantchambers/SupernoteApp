@@ -177,8 +177,12 @@ calendars selected** for the final real-provider checks:
 
 ```sh
 docker compose exec web python manage.py planner_accept_device DEVICE_ID \
-  --firmware 2.27.42 --confirm-roundtrip
+  --confirm-roundtrip
 ```
+
+The command requires an observed connection and acknowledged revision. Firmware
+is optional: pass `--firmware VERSION` only when its installed value is known;
+the command accepts A6X releases 2.27.42 and later without guessing a version.
 
 Set `PLANNER_GOOGLE_WRITES_ENABLED=true`, restart web/worker, then test:
 
