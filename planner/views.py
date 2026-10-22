@@ -52,6 +52,10 @@ def capture_initial(op):
     return initial
 
 
+def entry_location(item):
+    return f'/planner/?book={item.book_id}&day={item.day.isoformat()}&paper=calendar&entry={item.pk}#entry-{item.pk}'
+
+
 @login_required
 def dashboard(request):
     books = Book.objects.filter(owner=request.user).order_by('-start')
@@ -70,6 +74,8 @@ def dashboard(request):
         week = day - timedelta(days=day.weekday())
         view = request.GET.get('view', 'week')
         context['planner_view'] = view if view in ('week', 'month', 'year') else 'week'
+        context['paper_mode'] = 'calendar' if request.GET.get('paper') == 'calendar' else 'tablet'
+        context['selected_entry'] = request.GET.get('entry', '')
         pages = [p for p in book.manifest['pages'] if p['kind'] == 'week' and p['date'] == week.isoformat()]
         visible = Item.objects.filter(book=book, deleted=False).filter(Q(calendar__isnull=True) | Q(calendar__selected=True))
         day_items = list(visible.filter(day__gte=week, day__lt=week + timedelta(days=7)).select_related('calendar'))
@@ -89,6 +95,7 @@ def dashboard(request):
                     'left': hit['rect'][0]*100, 'top': hit['rect'][1]*100, 'width': hit['rect'][2]*100, 'height': hit['rect'][3]*100}
                     for hit in page['snapshot'].regions if hit['item_id'] in current_items]
         month_days = [d for row in month_calendar.Calendar().monthdatescalendar(day.year, day.month) for d in row]
+        context['has_previews'] = any(page['snapshot'] for page in pages)
         counts = {r['day']: r['count'] for r in visible.filter(day__gte=month_days[0], day__lte=month_days[-1]).values('day').annotate(count=Count('id'))}
         context['month_days'] = [{'day': d, 'in_month': d.month == day.month, 'items': counts.get(d, 0)} for d in month_days]
         context['months'] = [p for p in book.manifest['pages'] if p['kind'] == 'month']
@@ -128,6 +135,7 @@ def edit_item(request, book_id, item_id=None):
         try:
             save_item(value, request.POST.get('version'))
             messages.success(request, 'Saved. Google and device changes will sync when connected.' if value.calendar_id else 'Saved in your planner. Choose a calendar or task list to sync this entry with Google.')
+            return redirect(entry_location(value))
         except ValueError as exc:
             messages.error(request, str(exc))
     else:
@@ -147,7 +155,7 @@ def remove_item(request, item_id):
         save_item(item, request.POST.get('version'))
     except ValueError as exc:
         messages.error(request, str(exc))
-    return redirect('/planner/?book=' + str(item.book_id))
+    return redirect('/planner/?book=' + str(item.book_id) + '&day=' + item.day.isoformat() + '&paper=calendar')
 
 
 @login_required
@@ -282,7 +290,7 @@ def review(request, operation_id):
                 (' Google sync remains queued until calendar writes are enabled and the device is validated.'
                  if item.calendar_id and (not settings.PLANNER_GOOGLE_WRITES_ENABLED or not Device.objects.filter(book=op.book, validated=True, revoked=False).exists())
                  else ''))
-            return redirect('/planner/?book=' + str(op.book_id) + '&day=' + item.day.isoformat() + '#entry-' + str(item.pk))
+            return redirect(entry_location(item))
         return render(request, 'planner/review.html', {'book': op.book, 'operation': op, 'form': form,
             'google_sync_ready': settings.PLANNER_GOOGLE_WRITES_ENABLED and Device.objects.filter(book=op.book, validated=True, revoked=False).exists()})
     if request.method == 'GET':

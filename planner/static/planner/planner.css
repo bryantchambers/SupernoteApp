@@ -7,6 +7,7 @@
 .planner-entry{padding:5px 0;border-bottom:1px dotted #e1e2dc;font-size:13px}.planner-muted{font-size:11px;letter-spacing:.06em;color:#7b827a}
 .planner-paper:has(.device-paper) .planner-capture{display:none}.planner-paper:has(.device-paper) .planner-day{min-height:0}
 .planner-button{display:inline-block;padding:9px 14px;border:1px solid #cbd5e1;border-radius:8px;background:white;font-size:13px;cursor:pointer}.planner-button:hover{border-color:#6366f1}
+.planner-button[aria-current="true"]{background:#263846;border-color:#263846;color:white}
 #daily-planner .rounded-xl{border-radius:12px}#daily-planner .flex-wrap{flex-wrap:wrap}#daily-planner .items-start{align-items:flex-start}#daily-planner .cursor-pointer{cursor:pointer}
 #daily-planner .grid-cols-1{grid-template-columns:minmax(0,1fr)}#daily-planner .grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}#daily-planner .grid-cols-7{grid-template-columns:repeat(7,minmax(0,1fr))}
 #daily-planner .gap-1{gap:.25rem}#daily-planner .gap-2{gap:.5rem}#daily-planner .gap-3{gap:.75rem}#daily-planner .gap-4{gap:1rem}#daily-planner .gap-5{gap:1.25rem}#daily-planner .gap-6{gap:1.5rem}#daily-planner .gap-8{gap:2rem}
