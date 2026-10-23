@@ -18,6 +18,9 @@ WORKDIR /build/SupernotePlanner
 RUN npm install --save-exact sn-plugin-lib@0.2.3
 RUN apt-get update && apt-get install -y --no-install-recommends zip && rm -rf /var/lib/apt/lists/*
 COPY . /source/device-planner
+RUN mkdir -p /tmp/planner-storage-tests \
+    && javac -encoding UTF-8 --release 8 -d /tmp/planner-storage-tests /source/device-planner/native/PlannerStateCodec.java /source/device-planner/native-tests/PlannerStateCodecTest.java \
+    && java -cp /tmp/planner-storage-tests com.supernoteplanner.PlannerStateCodecTest
 RUN SN_PLUGIN_SDK_ROOT=/build/SupernotePlanner/node_modules/sn-plugin-lib \
     node --experimental-vm-modules --test /source/device-planner/core.test.mjs \
     /source/device-planner/engine.test.mjs /source/device-planner/sdk-contract.test.mjs

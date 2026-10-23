@@ -5,6 +5,30 @@ from .models import Book, Item, Calendar
 from .recognition import valid_local
 
 
+class CalendarChoiceField(forms.ModelChoiceField):
+    def label_from_instance(self, obj):
+        return f'{obj.connection.get_provider_display()} · {obj.title}'
+
+
+class ExchangeForm(forms.Form):
+    mailbox = forms.EmailField(label='KU email address', max_length=250)
+    username = forms.CharField(label='KU login name (as used for Exchange)', max_length=250)
+    password = forms.CharField(widget=forms.PasswordInput(attrs={'autocomplete': 'current-password'}),
+                               strip=False, max_length=1024)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs['class'] = 'block w-full border border-slate-300 rounded px-3 py-2 mt-1'
+
+    def clean_mailbox(self):
+        mailbox = self.cleaned_data['mailbox'].lower()
+        domain = mailbox.rsplit('@', 1)[1]
+        if domain != 'ku.dk' and not domain.endswith('.ku.dk'):
+            raise forms.ValidationError('Use your University of Copenhagen email address.')
+        return mailbox
+
+
 class BookForm(forms.ModelForm):
     class Meta:
         model = Book
@@ -27,6 +51,7 @@ class BookForm(forms.ModelForm):
 
 
 class ItemForm(forms.ModelForm):
+    calendar = CalendarChoiceField(queryset=Calendar.objects.none(), required=False, empty_label='Planner only')
     class Meta:
         model = Item
         fields = ['kind', 'title', 'day', 'end_day', 'start_time', 'end_time', 'calendar', 'completed']
@@ -35,12 +60,14 @@ class ItemForm(forms.ModelForm):
     def __init__(self, *args, book, **kwargs):
         super().__init__(*args, **kwargs)
         self.book = book
-        self.fields['calendar'].queryset = Calendar.objects.filter(connection__owner=book.owner, selected=True, writable=True)
+        self.fields['calendar'].queryset = Calendar.objects.filter(connection__owner=book.owner, selected=True, writable=True).select_related('connection')
         if not self.is_bound and self.instance._state.adding and 'calendar' not in self.initial:
             self.initial['calendar'] = self.fields['calendar'].queryset.filter(kind=self.initial.get('kind', 'event'), is_default=True).values_list('pk', flat=True).first()
 
     def clean(self):
         data = super().clean()
+        if not self.instance._state.adding and self.instance.provider_read_only:
+            raise forms.ValidationError('Change Exchange meetings and recurring entries in Outlook.')
         day, start, end = data.get('day'), data.get('start_time'), data.get('end_time')
         if day and not self.book.start <= day < date.fromisoformat(self.book.manifest['end']):
             raise forms.ValidationError('Choose a date inside this planner.')

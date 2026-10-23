@@ -72,7 +72,7 @@ export default function App() {
   }
   return <View style={{flex:1,backgroundColor:'white'}}>
     <View style={{padding:20,borderBottomColor:'black',borderBottomWidth:2}}>
-      <Text style={{fontSize:24,fontWeight:'700',marginBottom:10}}>Daily Planner · 0.1.6</Text>
+      <Text style={{fontSize:24,fontWeight:'700',marginBottom:10}}>Daily Planner · 0.1.8</Text>
       <Button title={working ? 'Stop and return to notebook' : 'Return to notebook'} onPress={close}/>
       <Text style={{fontSize:18,color:'black'}} accessibilityLiveRegion="polite">{message}</Text>
       {working ? <Text style={{fontSize:16,marginTop:8}}>Working — keep this notebook open.</Text> : null}

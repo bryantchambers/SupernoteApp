@@ -1,6 +1,8 @@
 import glob
 import logging
 import os
+import re
+import tempfile
 
 from django.conf import settings
 from google import genai
@@ -33,16 +35,21 @@ Output rules:
 
 class AIService:
     @staticmethod
-    def _render_note_images(file_node_id):
+    def _render_note_images(file_node_id, output_dir):
         file_node = FileNode.objects.get(id=file_node_id)
-        input_path = os.path.join(settings.SUPERNOTE_SOURCE, file_node.path)
+        base_dir = settings.ARCHIVE_DIR if file_node.is_archived else settings.SUPERNOTE_SOURCE
+        input_path = os.path.join(base_dir, file_node.path)
 
-        temp_img_dir = os.path.join(settings.ARCHIVE_DIR, "temp_images", str(file_node.id))
+        temp_img_dir = output_dir
         converted = SuperNoteUtility.convert_note_to_images(input_path, temp_img_dir)
         if not converted:
             raise RuntimeError(f'Failed to render note pages to PNG images: {input_path}')
 
-        images = sorted(glob.glob(os.path.join(temp_img_dir, "*.png")))
+        # Numeric ordering keeps page 10 after page 9 rather than after page 1.
+        images = sorted(glob.glob(os.path.join(temp_img_dir, "*.png")), key=lambda path: [
+            int(part) if part.isdigit() else part
+            for part in re.split(r'(\d+)', os.path.basename(path))
+        ])
         if not images:
             raise RuntimeError(f'No page images were generated for: {input_path}')
 
@@ -116,8 +123,17 @@ class AIService:
 
     @staticmethod
     def process_note_with_ai(file_node_id, prompt: str = None):
-        file_node, _, images = AIService._render_note_images(file_node_id)
-        markdown_content, _, _ = AIService._build_markdown_from_images(images, prompt or DEFAULT_AI_PROMPT)
+        provider = settings.AI_PROVIDER
+        if provider not in ('gemini', 'ollama'):
+            raise ValueError('Choose Gemini or Ollama as the AI provider in Settings.')
+        # Separate requests must never share stale pages or each other's renders.
+        with tempfile.TemporaryDirectory(prefix='supernote-ai-') as output_dir:
+            file_node, _, images = AIService._render_note_images(file_node_id, output_dir)
+            if provider == 'ollama':
+                from .ollama_service import build_markdown
+                markdown_content, _, model = build_markdown(images, prompt or DEFAULT_AI_PROMPT, DEFAULT_AI_PROMPT, custom=bool(prompt))
+            else:
+                markdown_content, _, model = AIService._build_markdown_from_images(images, prompt or DEFAULT_AI_PROMPT)
 
         processed_note, created = ProcessedNote.objects.update_or_create(
             file_node=file_node,
@@ -127,4 +143,6 @@ class AIService:
             },
         )
 
+        processed_note.ai_provider = provider
+        processed_note.ai_model = model
         return processed_note

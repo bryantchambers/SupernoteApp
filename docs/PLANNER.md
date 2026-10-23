@@ -1,7 +1,8 @@
 # Daily Planner
 
 Integrated Django app at `/planner/`, above Notes. It uses the same database,
-container, and storage as the file browser. No additional Python packages.
+container, and storage as the file browser. KU Exchange support uses the container's
+pinned EWS library; setup and acceptance are documented in [EXCHANGE.md](EXCHANGE.md).
 
 ## Current implementation and release gate
 
@@ -132,7 +133,17 @@ calendar/task list first.
 
 Planner settings provide authenticated downloads of the built plugin and public
 CA certificate. The deployed plugin SHA-256 is
-`5d151cdd386a4261ab7c2bfe7013c3465a834cee68914d814e223b0e3f12d229` (plugin 0.1.6).
+`30b41657d27072d2d0fd37659333dc97f364b37946dfca5c34c86f2bbe106a51` (plugin 0.1.8).
+Version 0.1.8 fills blank day space with up to five event rows at the original
+font size, respecting ink, day boundaries and navigation. No new PDF/notebook is
+needed. It also refreshes overflow captions and handles cross-outs on expanded
+rows before OCR.
+Version 0.1.7 added bounded authenticated storage, staged verification
+before replacing saved state, and bounded legacy reads. Install over the existing
+plugin and restart the tablet; try **Sync Planner** first. If authentication still
+fails, use confirmed recovery with the original notebook and pairing file.
+Do not clear data, uninstall, or reinitialize. See the plugin README for recovery
+limits and the remaining on-device Keystore acceptance check.
 
 In settings click **Download pairing file**, then copy it to the tablet's
 `Document` folder as exactly `supernote-planner-pairing.json`. In plugin 0.1.4

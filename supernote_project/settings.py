@@ -139,6 +139,8 @@ PLANNER_GOOGLE_CLIENT_ID = os.environ.get('PLANNER_GOOGLE_CLIENT_ID', '')
 PLANNER_GOOGLE_CLIENT_SECRET = os.environ.get('PLANNER_GOOGLE_CLIENT_SECRET', '')
 PLANNER_GOOGLE_REDIRECT_URI = os.environ.get('PLANNER_GOOGLE_REDIRECT_URI', 'http://localhost:8123/planner/google/callback/')
 PLANNER_GOOGLE_WRITES_ENABLED = os.environ.get('PLANNER_GOOGLE_WRITES_ENABLED', 'false').lower() == 'true'
+PLANNER_EXCHANGE_WRITES_ENABLED = os.environ.get('PLANNER_EXCHANGE_WRITES_ENABLED', 'false').lower() == 'true'
+PLANNER_EXCHANGE_ENDPOINT = 'https://mail.ku.dk/EWS/Exchange.asmx'
 PLANNER_PUBLIC_ORIGIN = os.environ.get('PLANNER_PUBLIC_ORIGIN', '')
 ARCHIVE_DIR = Path(os.environ.get("SUPERNOTE_ARCHIVE_DIR", DATA_DIR / "ARCHIVE"))
 PROCESSED_MD_DIR = Path(os.environ.get("SUPERNOTE_PROCESSED_DIR", DATA_DIR / "PROCESSED_NOTES"))
@@ -177,6 +179,10 @@ CALIBRE_EBOOK_CONVERT = os.environ.get("CALIBRE_EBOOK_CONVERT", "ebook-convert")
 PERIODICAL_OUTPUT_FORMAT = os.environ.get("PERIODICAL_OUTPUT_FORMAT", "epub")
 
 # AI Configuration
+AI_PROVIDER = os.environ.get('AI_PROVIDER', 'gemini').strip().lower()
+OLLAMA_BASE_URL = os.environ.get('OLLAMA_BASE_URL', 'http://rockpigeon:11434')
+OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'qwen3-vl:4b-instruct-q4_K_M')
+OLLAMA_TIMEOUT = os.environ.get('OLLAMA_TIMEOUT', '180')
 GOOGLE_GENAI_API_KEY = (
     os.environ.get("GOOGLE_GENAI_API_KEY")
     or os.environ.get("GEMINI_API_KEY")

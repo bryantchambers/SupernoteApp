@@ -3,7 +3,7 @@ import time
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from planner.artifacts import root
-from planner.google import sync_connection
+from planner.providers import sync_connection
 from planner.models import Connection
 
 
@@ -22,11 +22,11 @@ class Command(BaseCommand):
                 self.stdout.write('Planner worker is already running.')
                 return
             while True:
-                for connection in Connection.objects.exclude(credentials=''):
+                for connection in Connection.objects.exclude(credentials='').filter(suspended=False):
                     try:
                         sync_connection(connection)
                     except Exception:
-                        connection.message = 'Google sync failed. Check connectivity or reconnect the account.'
+                        connection.message = f'{connection.get_provider_display()} sync failed. Check connectivity or reconnect the account.'
                         connection.checked_at = timezone.now()
                         connection.save(update_fields=['message', 'checked_at'])
                         self.stderr.write(f'Planner connection {connection.pk}: sync failed; pending changes retained.')

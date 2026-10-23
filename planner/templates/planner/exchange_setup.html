@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block title %}Connect KU Exchange · Supernote{% endblock %}
+{% block content %}
+<section class="max-w-xl mx-auto bg-white border rounded-xl p-6">
+  <a href="{% url 'planner:dashboard' %}#planner-settings" class="text-indigo-600">← Back to planner</a>
+  <h1 class="text-2xl font-semibold mt-5 mb-3">Connect KU Exchange</h1>
+  <p class="text-sm text-slate-500 mb-4">Your planner server connects directly to KU. Enter your KU email and Exchange login name; the login may be your KU username rather than your email address. Your password is encrypted on this server and is never sent to the tablet.</p>
+  <p class="text-sm text-slate-500 mb-4">This connection reads calendars and syncs ordinary appointments. Change meetings and recurring events in Outlook. Exchange writes stay disabled until connection acceptance.</p>
+  <form method="post" class="space-y-4" autocomplete="on">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button class="rounded bg-indigo-600 text-white px-4 py-2">Save credential &amp; test connection</button>
+  </form>
+  {% if exchange_connection %}<p role="status" class="text-sm text-slate-500 mt-5">{{ exchange_connection.message }}</p>{% endif %}
+</section>
+{% endblock %}

@@ -30,6 +30,8 @@ def cipher():
 
 
 def store_credentials(connection, values):
+    if connection.provider != 'google':
+        raise ValueError('This is not a Google connection.')
     connection.credentials = cipher().encrypt(json.dumps(values).encode()).decode()
     connection.save(update_fields=['credentials'])
 
@@ -66,13 +68,15 @@ def finish_authorization(request):
     if not values.get('refresh_token'):
         raise ValueError('Google did not grant offline access. Reconnect and grant the requested permissions.')
     values['expires_at'] = timezone.now().timestamp() + values.get('expires_in', 3600)
-    connection, _ = Connection.objects.get_or_create(owner=request.user)
+    connection, _ = Connection.objects.get_or_create(owner=request.user, provider='google')
     store_credentials(connection, values)
     discover(connection)
 
 
 class Client:
     def __init__(self, connection):
+        if connection.provider != 'google':
+            raise ValueError('This is not a Google connection.')
         self.connection = connection
 
     def request(self, method, url, **kwargs):
@@ -262,6 +266,8 @@ def push(op):
         op.save(update_fields=['status'])
         return
     cal = item.calendar
+    if cal.connection.provider != 'google':
+        raise ValueError('Exchange entries cannot be sent to Google.')
     if not cal.selected or not cal.writable:
         raise ValueError('This calendar/task list is no longer selected and writable.')
     if not settings.PLANNER_GOOGLE_WRITES_ENABLED or not Device.objects.filter(book=item.book, validated=True, revoked=False).exists():
@@ -318,9 +324,11 @@ def push(op):
 
 
 def sync_connection(connection):
+    if connection.provider != 'google':
+        raise ValueError('This is not a Google connection.')
     for cal in Calendar.objects.filter(connection=connection, selected=True):
         pull(cal)
-    for op in Operation.objects.filter(book__owner=connection.owner, status='pending').select_related('item').order_by('created_at'):
+    for op in Operation.objects.filter(book__owner=connection.owner, item__calendar__connection=connection, status='pending').select_related('item').order_by('created_at'):
         if not op.item_id:
             continue
         if op.item.calendar_id and (not settings.PLANNER_GOOGLE_WRITES_ENABLED or

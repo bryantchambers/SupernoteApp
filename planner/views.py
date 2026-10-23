@@ -27,6 +27,15 @@ from .layout import holidays, manifest
 from .models import Book, Calendar, Connection, Device, Item, Operation, PageSnapshot
 from .services import device_changes, encode_item, pair, save_item
 from .recognition import parse_entry
+from .providers import writes_enabled
+
+
+def connection_status(owner):
+    connections = list(Connection.objects.filter(owner=owner).order_by('provider'))
+    for connection in connections:
+        connection.writes_enabled = (settings.PLANNER_EXCHANGE_WRITES_ENABLED and connection.write_verified_at if connection.provider == 'exchange'
+                                     else settings.PLANNER_GOOGLE_WRITES_ENABLED)
+    return connections
 
 
 def is_capture_review(op):
@@ -61,7 +70,10 @@ def dashboard(request):
     books = Book.objects.filter(owner=request.user).order_by('-start')
     book = get_object_or_404(books, pk=request.GET['book']) if request.GET.get('book') else books.first()
     context = {'books': books, 'book': book, 'book_form': BookForm(initial={'start': date(2027, 1, 1), 'timezone': 'Europe/Copenhagen'}),
-               'connection': Connection.objects.filter(owner=request.user).first(), 'calendars': Calendar.objects.filter(connection__owner=request.user),
+               'connection': Connection.objects.filter(owner=request.user, provider='google').first(),
+               'exchange_connection': Connection.objects.filter(owner=request.user, provider='exchange').first(),
+               'connections': connection_status(request.user),
+               'calendars': Calendar.objects.filter(connection__owner=request.user).select_related('connection').order_by('connection__provider', 'kind', 'title'),
                'writes_enabled': settings.PLANNER_GOOGLE_WRITES_ENABLED,
                'plugin_available': (root() / 'plugins/SupernotePlanner.snplg').is_file()}
     if book:
@@ -78,7 +90,7 @@ def dashboard(request):
         context['selected_entry'] = request.GET.get('entry', '')
         pages = [p for p in book.manifest['pages'] if p['kind'] == 'week' and p['date'] == week.isoformat()]
         visible = Item.objects.filter(book=book, deleted=False).filter(Q(calendar__isnull=True) | Q(calendar__selected=True))
-        day_items = list(visible.filter(day__gte=week, day__lt=week + timedelta(days=7)).select_related('calendar'))
+        day_items = list(visible.filter(day__gte=week, day__lt=week + timedelta(days=7)).select_related('calendar__connection'))
         holidays_by_day = holidays(book.start.year)
         for page in pages:
             page['snapshot'] = PageSnapshot.objects.filter(device__book=book, page_id=page['id']).order_by('-created_at').first()
@@ -134,7 +146,7 @@ def edit_item(request, book_id, item_id=None):
         value.book = book
         try:
             save_item(value, request.POST.get('version'))
-            messages.success(request, 'Saved. Google and device changes will sync when connected.' if value.calendar_id else 'Saved in your planner. Choose a calendar or task list to sync this entry with Google.')
+            messages.success(request, 'Saved. Calendar and device changes will sync when connected.' if value.calendar_id else 'Saved in your planner. Choose a calendar or task list to sync this entry.')
             return redirect(entry_location(value))
         except ValueError as exc:
             messages.error(request, str(exc))
@@ -201,7 +213,7 @@ def select_calendars(request):
 @login_required
 @require_POST
 def refresh_calendars(request):
-    connection = get_object_or_404(Connection, owner=request.user)
+    connection = get_object_or_404(Connection, owner=request.user, provider='google')
     try:
         google.discover(connection)
         messages.success(request, 'Calendar and task lists refreshed.')
@@ -260,7 +272,7 @@ def revoke_device(request, device_id):
 def status(request, book_id):
     book = get_object_or_404(Book, pk=book_id, owner=request.user)
     return render(request, 'planner/status.html', {'book': book,
-        'connection': Connection.objects.filter(owner=request.user).first(),
+        'connections': connection_status(request.user),
         'pending': Operation.objects.filter(book=book, status='pending').count(),
         'writes_enabled': settings.PLANNER_GOOGLE_WRITES_ENABLED})
 
@@ -279,7 +291,7 @@ def review(request, operation_id):
     if is_capture_review(op) and (request.method == 'GET' or request.POST.get('action') == 'accept_capture'):
         form = ItemForm(request.POST if request.method == 'POST' else None, book=op.book, initial=capture_initial(op))
         form.fields['calendar'].label = 'Calendar or task list'
-        form.fields['calendar'].empty_label = 'Planner only (no Google sync)'
+        form.fields['calendar'].empty_label = 'Planner only (no calendar sync)'
         if request.method == 'POST' and form.is_valid():
             item = form.save(commit=False)
             item.book = op.book
@@ -287,8 +299,8 @@ def review(request, operation_id):
             op.item, op.status, op.message = item, 'accepted', 'Accepted after handwriting review.'
             op.save(update_fields=['item', 'status', 'message'])
             messages.success(request, 'Handwriting accepted. The entry is saved in your planner.' +
-                (' Google sync remains queued until calendar writes are enabled and the device is validated.'
-                 if item.calendar_id and (not settings.PLANNER_GOOGLE_WRITES_ENABLED or not Device.objects.filter(book=op.book, validated=True, revoked=False).exists())
+                (' Calendar sync remains queued until provider writes are enabled and the device is validated.'
+                 if item.calendar_id and (not writes_enabled(item.calendar) or not Device.objects.filter(book=op.book, validated=True, revoked=False).exists())
                  else ''))
             return redirect(entry_location(item))
         return render(request, 'planner/review.html', {'book': op.book, 'operation': op, 'form': form,
@@ -305,22 +317,25 @@ def review(request, operation_id):
                 item.etag = ''
                 item.save(update_fields=['etag'])
                 Calendar.objects.filter(pk=item.calendar_id).update(sync_token='', watermark=None, last_full_at=None)
-                messages.info(request, 'Google will reload this entry on the next sync. Refresh the week afterward.')
+                messages.info(request, 'The calendar provider will reload this entry on the next sync. Refresh the week afterward.')
             else:
                 item.calendar = None
                 item.deleted = False
                 item.save(update_fields=['calendar', 'deleted'])
                 from .services import bump
                 bump(item.book)
-                messages.info(request, 'Kept as a local planner entry; the Google change was dismissed.')
+                messages.info(request, 'Kept as a local planner entry; the calendar change was dismissed.')
         op.status = 'dismissed'
         op.save(update_fields=['status'])
     elif request.POST.get('action') == 'approve' and op.item_id and op.status == 'review':
+        if op.item.provider_read_only:
+            messages.error(request, 'Change Exchange meetings and recurring entries in Outlook. This restriction cannot be overridden here.')
+            return redirect('/planner/?book=' + str(op.book_id))
         op.payload['review_approved'] = True
         op.status, op.message = 'pending', ''
         op.save(update_fields=['payload', 'status', 'message'])
     else:
-        messages.info(request, 'Create a corrected entry using the form; then dismiss this proposal. Conflicts require reloading Google before reapplying your change.')
+        messages.info(request, 'Create a corrected entry using the form; then dismiss this proposal. Conflicts require reloading the calendar before reapplying your change.')
     return redirect('/planner/?book=' + str(op.book_id))
 
 
@@ -413,7 +428,7 @@ def plugin_source(request):
     stream = io.BytesIO()
     with tarfile.open(fileobj=stream, mode='w:gz') as archive:
         for path in sorted(source.rglob('*')):
-            if path.is_file() and not path.is_symlink() and '__pycache__' not in path.parts and (path.name == 'Dockerfile' or path.suffix in ('.js', '.jsx', '.mjs', '.kt', '.py', '.json', '.md')):
+            if path.is_file() and not path.is_symlink() and '__pycache__' not in path.parts and (path.name == 'Dockerfile' or path.suffix in ('.js', '.jsx', '.mjs', '.kt', '.java', '.py', '.json', '.md')):
                 archive.add(path, arcname='device-planner/' + path.relative_to(source).as_posix(), recursive=False)
     stream.seek(0)
     return FileResponse(stream, as_attachment=True, filename='supernote-planner-plugin-source.tar.gz')

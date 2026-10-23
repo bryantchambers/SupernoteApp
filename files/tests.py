@@ -484,6 +484,81 @@ class EnvLoadingAndAIServiceTests(TestCase):
             archive_tmp.cleanup()
 
 
+    def test_both_ai_actions_work_without_optional_markdown_renderer(self):
+        node = FileNode.objects.create(
+            path='Note/sample.note', name='sample.note', extension='note', size=5,
+            last_modified=timezone.now(), hash='abc', is_directory=False,
+        )
+        markdown = '# Note\n<script>alert("unsafe")</script>'
+        processed = ProcessedNote.objects.create(
+            file_node=node, markdown_content=markdown, last_processed_hash='abc',
+        )
+        with override_settings(GOOGLE_GENAI_API_KEY='test-key', AI_PROCESSING_ENABLED=True):
+            with patch.dict('sys.modules', {'markdown_it': None}):
+                with patch('files.views.AIService.process_note_with_ai', return_value=processed):
+                    for view, data in [(process_with_ai, {}), (process_with_ai_custom, {'prompt': 'Summarize'})]:
+                        response = view(self.factory.post('/process-ai/', data), node.pk)
+                        self.assertEqual(response.status_code, 200)
+                        payload = json.loads(response.content)
+                        self.assertEqual(payload['markdown'], markdown)
+                        self.assertIn('Rich preview is unavailable', payload['preview_notice'])
+                        self.assertNotIn('<script>', payload['html'])
+                        self.assertIn('&lt;script&gt;', payload['html'])
+
+    def test_ai_actions_cannot_trigger_paid_processing_by_get(self):
+        with patch('files.views.AIService.process_note_with_ai') as process:
+            for view in (process_with_ai, process_with_ai_custom):
+                self.assertEqual(view(self.factory.get('/process-ai/'), 1).status_code, 405)
+        process.assert_not_called()
+
+    def test_archived_note_uses_isolated_numerically_ordered_pages_and_cleans_up(self):
+        with tempfile.TemporaryDirectory() as archive:
+            node = FileNode.objects.create(
+                path='Note/archived.note', name='archived.note', extension='note', size=5,
+                last_modified=timezone.now(), hash='abc', is_directory=False, is_archived=True,
+            )
+            generated_dirs = []
+
+            def render(input_path, output_dir):
+                self.assertEqual(input_path, os.path.join(archive, node.path))
+                generated_dirs.append(output_dir)
+                for number in (10, 2, 1):
+                    Path(output_dir, f'page-{number}.png').write_bytes(b'PNG')
+                return True
+
+            def generate(images, prompt):
+                self.assertEqual([Path(p).name for p in images], ['page-1.png', 'page-2.png', 'page-10.png'])
+                self.assertTrue(all(Path(p).exists() for p in images))
+                return '# Converted', [], 'test-model'
+
+            with override_settings(ARCHIVE_DIR=archive):
+                with patch('files.ai_service.SuperNoteUtility.convert_note_to_images', side_effect=render):
+                    with patch.object(AIService, '_build_markdown_from_images', side_effect=generate):
+                        AIService.process_note_with_ai(node.pk)
+                        AIService.process_note_with_ai(node.pk)
+            self.assertNotEqual(*generated_dirs)
+            self.assertTrue(all(not Path(p).exists() for p in generated_dirs))
+
+    def test_rendered_pages_are_cleaned_up_when_provider_fails(self):
+        node = FileNode.objects.create(
+            path='Note/sample.note', name='sample.note', extension='note', size=5,
+            last_modified=timezone.now(), hash='abc', is_directory=False,
+        )
+        generated_dirs = []
+
+        def render(input_path, output_dir):
+            generated_dirs.append(output_dir)
+            Path(output_dir, 'page-1.png').write_bytes(b'PNG')
+            return True
+
+        with patch('files.ai_service.SuperNoteUtility.convert_note_to_images', side_effect=render):
+            with patch.object(AIService, '_build_markdown_from_images', side_effect=RuntimeError('provider failed')):
+                with self.assertRaisesRegex(RuntimeError, 'provider failed'):
+                    AIService.process_note_with_ai(node.pk)
+        self.assertFalse(Path(generated_dirs[0]).exists())
+        self.assertFalse(ProcessedNote.objects.filter(file_node=node).exists())
+
+
 class ZoteroIntegrationTests(TestCase):
     def setUp(self):
         self.factory = RequestFactory()
@@ -1115,6 +1190,18 @@ class SettingsDashboardTests(TestCase):
     def setUp(self):
         self.base_tmp = tempfile.TemporaryDirectory()
         self.base_dir = Path(self.base_tmp.name)
+        # BASE_DIR alone does not override the deployed SUPERNOTE_ENV_FILE.
+        # Never let a test mutate the real app.env or leak runtime credentials.
+        from .settings_service import RUNTIME_SETTINGS
+        runtime = override_settings(**{
+            name: getattr(project_settings, name)
+            for name in RUNTIME_SETTINGS.values() if hasattr(project_settings, name)
+        })
+        runtime.enable()
+        self.addCleanup(runtime.disable)
+        env = patch.dict(os.environ, {'SUPERNOTE_ENV_FILE': str(self.base_dir / '.env')})
+        env.start()
+        self.addCleanup(env.stop)
         (self.base_dir / '.env').write_text(
             'UNKNOWN_VALUE=keep-me\n'
             'GOOGLE_GENAI_API_KEY=abcd1234wxyz\n'

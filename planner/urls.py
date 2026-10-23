@@ -1,8 +1,13 @@
 from django.urls import path
 from . import views
+from . import exchange_views
 
 app_name = 'planner'
 urlpatterns = [
+    path('exchange/connect/', exchange_views.setup, name='exchange_connect'),
+    path('exchange/test/', exchange_views.test, name='exchange_test'),
+    path('exchange/disconnect/', exchange_views.disconnect, name='exchange_disconnect'),
+    path('calendars/select/', views.select_calendars, name='select_all_calendars'),
     path('', views.dashboard, name='dashboard'),
     path('create/', views.create_book, name='create'),
     path('book/<uuid:book_id>/items/', views.edit_item, name='add_item'),

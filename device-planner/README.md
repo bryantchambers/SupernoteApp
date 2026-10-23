@@ -76,10 +76,55 @@ cancellations need explicit correction in the web app.
 
 State/outbox are encrypted with Android Keystore and saved atomically before requests.
 Clear data/uninstall can remove the queue and key: sync before uninstalling.
-The first version keeps two generated entries per day on-device, displaying an
-overflow count; the app contains the complete list. It never overwrites handwriting.
+Plugin **0.1.8** fills each day's available vertical space at the existing readable
+font size and row spacing, rather than stopping after two entries. The current
+template fits up to five rows in a blank day box. Rows stop before the next day,
+weekly notes or page navigation and skip existing pen strokes. Existing events
+keep their row positions, so cancellation marks cannot attach to another event.
+The remaining overflow count appears only on the final visible row; all entries
+remain available in the app. Caption and position changes trigger a redraw even
+when event versions have not changed. Cross-outs/checks on expanded rows are
+processed before capture OCR. Existing notebooks and PDFs need no regeneration;
+install the update and sync. The storage safeguards introduced in 0.1.7 remain.
 
 ## Hardware checks still required
+
+Plugin **0.1.7** changes encrypted state storage to a versioned, gzip-compressed
+envelope of independently authenticated blocks, each at most 16 KiB. Every block
+has a fresh Keystore nonce; write identity, sizes, count and block index are
+authenticated to reject truncation, reordering and mixed writes. Whole-state
+Android Keystore operations are avoided. Legacy IV+ciphertext is still read,
+using bounded update calls before tag verification. A valid legacy state is
+migrated on the next ordinary save; its old encrypted bytes are retained.
+
+Before replacing active state, every save now decrypts its candidate in memory,
+writes a separate staged file and verifies that file through the on-device
+provider. Failure keeps the active queue intact. Recovery still requires explicit
+confirmation and matching notebook anchors and activates a fresh generation only
+after verification. Previous generations and keys are never deleted. A native
+codec-version check rejects a new JS bundle running with the old native module.
+
+Install the full 0.1.7 package **over the existing plugin**, restart the tablet,
+open the original notebook and try **Sync Planner** first. If legacy state is
+readable with bounded updates, its queue is preserved automatically. Only if the
+authentication error remains, use the existing pairing file and confirmed recovery;
+unreadable unsynced state still cannot be promised recoverable. Do not clear app
+data, uninstall or initialize a replacement notebook.
+
+The recovery error after adding Exchange coincided with a minimum 174,521-byte
+manifest/items state (180 pages, 252 items). A size-sensitive Keystore/provider
+failure is a working hypothesis, not a verified hardware diagnosis. The portable
+codec has real JCE round-trip and adversarial tests; actual Android Keystore and
+firmware behavior still require the A6X acceptance check. Native errors now name
+the failed encryption, verification, staged-read or commit step.
+
+The isolated Android Docker build runs the dependency-free Java tests before SDK
+contract tests and packaging. To run just the codec suite with an existing JDK:
+
+```sh
+javac -encoding UTF-8 --release 8 -d /tmp/planner-storage-tests device-planner/native/PlannerStateCodec.java device-planner/native-tests/PlannerStateCodecTest.java
+java -cp /tmp/planner-storage-tests com.supernoteplanner.PlannerStateCodecTest
+```
 
 Plugin 0.1.6 treats screen-awake control as optional: a headless host must not
 block pairing/sync because it exposes no Activity. A visible warning asks the

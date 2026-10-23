@@ -30,6 +30,8 @@ class PlannerStorageModule(private val context: ReactApplicationContext) : React
     private val keyAlias = "SupernotePlanner-v1"
     override fun getName() = "PlannerStorage"
 
+    @ReactMethod fun getStateCodecVersion(promise: Promise) { promise.resolve(2) }
+
     @ReactMethod fun setKeepAwake(enabled: Boolean, promise: Promise) {
         val activity = context.currentActivity
         if (activity == null) { promise.resolve(false); return }
@@ -112,15 +114,40 @@ class PlannerStorageModule(private val context: ReactApplicationContext) : React
     }
     private fun decrypt(location: Pair<AtomicFile, String>): String {
         val bytes = location.first.readFully()
-        require(bytes.size > 12) { "Corrupt planner state; keep storage intact" }
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, stateKey(location.second, false), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
-        return String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8)
+        return String(PlannerStateCodec.decrypt(bytes, stateKey(location.second, false)), Charsets.UTF_8)
     }
     private fun writeAtomic(file: AtomicFile, bytes: ByteArray) {
         val stream = file.startWrite()
         try { stream.write(bytes); file.finishWrite(stream) }
         catch (e: Exception) { file.failWrite(stream); throw e }
+    }
+    private fun verifiedSave(selected: Pair<AtomicFile, String>, value: String, create: Boolean) {
+        val key = storageStage("Opening the state key") { stateKey(selected.second, create) }
+        val encoded = storageStage("Encrypting bounded planner blocks") { PlannerStateCodec.encrypt(value.toByteArray(Charsets.UTF_8), key) }
+        // Check the on-device provider BEFORE touching the active queue.
+        require(storageStage("Verifying encrypted blocks before saving") { String(PlannerStateCodec.decrypt(encoded, key), Charsets.UTF_8) } == value) {
+            "Planner encryption verification failed; the previous saved queue is preserved"
+        }
+        val staged = AtomicFile(File(selected.first.baseFile.parentFile, "staged-${UUID.randomUUID()}.enc"))
+        storageStage("Writing the staged planner state") { writeAtomic(staged, encoded) }
+        require(storageStage("Reading back the staged planner state") { decrypt(Pair(staged, selected.second)) } == value) {
+            "Planner read-back verification failed; the previous saved queue is preserved"
+        }
+        // Keep the previous encrypted bytes even after a successful format upgrade.
+        if (selected.first.baseFile.exists() || File(selected.first.baseFile.path + ".bak").exists()) {
+            val previous = selected.first.readFully()
+            if (!PlannerStateCodec.isCurrentFormat(previous)) {
+                val retained = AtomicFile(File(selected.first.baseFile.parentFile, "retained-before-v2-${selected.first.baseFile.name}"))
+                if (!retained.baseFile.exists()) storageStage("Retaining the old encrypted format") { writeAtomic(retained, previous) }
+            }
+        }
+        storageStage("Committing verified planner state") { writeAtomic(selected.first, encoded) }
+        // The staging file has served its purpose; old states and keys are kept.
+        staged.delete()
+    }
+    private fun <T> storageStage(stage: String, action: () -> T): T {
+        try { return action() }
+        catch (e: Exception) { throw IllegalStateException("$stage failed (${e.javaClass.simpleName}); previous saved state was kept", e) }
     }
     private fun execute(promise: Promise, action: () -> Any?) {
         executor.execute task@ {
@@ -154,10 +181,10 @@ class PlannerStorageModule(private val context: ReactApplicationContext) : React
         val selected = location(root)
         val file = selected.first
         val existing = file.baseFile.exists() || File(file.baseFile.path + ".bak").exists()
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        // A temporarily unavailable key must never be replaced over an existing queue.
-        cipher.init(Cipher.ENCRYPT_MODE, stateKey(selected.second, !existing))
-        writeAtomic(file, cipher.iv + cipher.doFinal(value.toByteArray(Charsets.UTF_8)))
+        // Never create a replacement key over an existing queue or overwrite an
+        // unreadable state through an ordinary import/save action.
+        if (existing) decrypt(selected)
+        verifiedSave(selected, value, !existing)
         true
     }
     @ReactMethod fun recover(root: String, value: String, promise: Promise) = execute(promise) {
@@ -169,9 +196,7 @@ class PlannerStorageModule(private val context: ReactApplicationContext) : React
         require(state.getJSONArray("outbox").length() == 0 && state.getBoolean("recovered")) { "Invalid recovery state" }
         val id = UUID.randomUUID().toString()
         val fresh = Pair(AtomicFile(File(previous.first.baseFile.parentFile, "state-$id.enc")), "$keyAlias-$id")
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, stateKey(fresh.second, true))
-        writeAtomic(fresh.first, cipher.iv + cipher.doFinal(value.toByteArray(Charsets.UTF_8)))
+        verifiedSave(fresh, value, true)
         require(decrypt(fresh) == value) { "Recovery verification failed; original planner state is preserved" }
         // Activate only after a verified write. Keep every prior encrypted file and key.
         val marker = AtomicFile(File(previous.first.baseFile.parentFile, "active-state.json"))

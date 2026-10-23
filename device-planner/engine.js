@@ -3,6 +3,7 @@ import {PluginManager, NativePluginManager, PluginNoteAPI, PluginFileAPI, Plugin
 import {metadata, pageMap, bounds, crossedOut, checked, newStrokeGroups, displayRows, acknowledge, parsePairingFile, readWithTimeout} from './core.mjs';
 
 const storage = NativeModules.PlannerStorage;
+let storageReady = false;
 export async function setKeepAwake(enabled) {
   // Plugins can run in a headless host: window control is optional, never a sync prerequisite.
   try { return storage?.setKeepAwake ? (await storage.setKeepAwake(enabled)) === true : false; }
@@ -66,6 +67,12 @@ async function permissions(report = () => {}) {
 
 async function directory() {
   if (!storage) throw new Error('The PlannerStorage native bridge is missing. Build the full plugin package.');
+  if (!storageReady) {
+    if (!storage.getStateCodecVersion || await readWithTimeout('Checking native planner storage version',() => storage.getStateCodecVersion()) !== 2) {
+      throw new Error('Install the full planner plugin 0.1.7 package and restart the tablet. The native storage module is outdated; saved files were not changed.');
+    }
+    storageReady = true;
+  }
   const response = await readWithTimeout('Reading plugin storage location',() => PluginManager.getPluginDirPath());
   return typeof response === 'string' ? response : check(response);
 }
@@ -298,6 +305,20 @@ export async function sync(report = () => {}) {
         state.pendingPreviews = [...previewPages];
         await save(state);
       }
+      // Expanded calendar rows may overlap the capture zone. Recognize their
+      // cancel/check marks before OCR can mistake those strokes for a new entry.
+      const owned = elements.filter(e => metadata(e).owner === OWNER && metadata(e).kind === 'item' && metadata(e).bookId === state.bookId);
+      for (const stroke of strokes.filter(s => !state.seen[s.fingerprint])) {
+        const matches = owned.filter(e => crossedOut(stroke.points,metadata(e).rect,size) || (metadata(e).itemKind === 'task' && checked(stroke.points,metadata(e).rect,size)));
+        if (matches.length !== 1) continue;
+        const row = metadata(matches[0]);
+        const operation = {id:await storage.randomId(),action:crossedOut(stroke.points,row.rect,size)?'cancel':'complete',item_id:row.itemId,version:row.version};
+        state.outbox.push(operation);
+        state.seen[stroke.fingerprint] = operation.id;
+        previewPages.add(page.id);
+        state.pendingPreviews = [...previewPages];
+        await save(state);
+      }
       for (const region of page.regions) {
         checkpoint();
         for (const group of newStrokeGroups(strokes,region,size,state.seen || {})) {
@@ -316,18 +337,6 @@ export async function sync(report = () => {}) {
         }
       }
       inkByPage.set(page.id,strokes.map(s => bounds(s.points,size)));
-      const owned = elements.filter(e => metadata(e).owner === OWNER && metadata(e).kind === 'item' && metadata(e).bookId === state.bookId);
-      for (const stroke of strokes.filter(s => !state.seen[s.fingerprint])) {
-        const matches = owned.filter(e => crossedOut(stroke.points,metadata(e).rect,size) || (metadata(e).itemKind === 'task' && checked(stroke.points,metadata(e).rect,size)));
-        if (matches.length !== 1) continue;
-        const row = metadata(matches[0]);
-        const operation = {id:await storage.randomId(),action:crossedOut(stroke.points,row.rect,size)?'cancel':'complete',item_id:row.itemId,version:row.version};
-        state.outbox.push(operation);
-        state.seen[stroke.fingerprint] = operation.id;
-        state.pendingPreviews = [...previewPages];
-        await save(state);
-        previewPages.add(page.id);
-      }
       // Free notes/erasures also refresh the paper preview, without calendar operations.
       const digest = await storage.hash(JSON.stringify(strokes.map(s => s.fingerprint).sort()));
       if (state.pageDigests?.[page.id] !== digest && (strokes.length || state.pageDigests?.[page.id] !== undefined)) previewPages.add(page.id);
@@ -360,8 +369,8 @@ export async function sync(report = () => {}) {
       for (const binding of Object.values(state.bindings)) {
         if (binding.pageId === page.id && !binding.retired && state.items.some(i => i.id === binding.itemId && !i.deleted)) hitboxes[page.id].push({item_id:binding.itemId,rect:binding.rect});
       }
-      const existingRows = owned.map(e => `${metadata(e).itemId}:${metadata(e).version}`).sort().join('|');
-      const newRows = rows.map(row => `${row.item.id}:${row.item.version}`).sort().join('|');
+      const existingRows = owned.map(e => { const m = metadata(e); return JSON.stringify([m.itemId,m.version,m.rect,m.renderText]); }).sort().join('|');
+      const newRows = rows.map(row => JSON.stringify([row.item.id,row.item.version,row.rect,row.text])).sort().join('|');
       if (existingRows === newRows) {
         release(currentElements);
         continue;
@@ -370,7 +379,7 @@ export async function sync(report = () => {}) {
       state.pendingPreviews = [...previewPages];
       await save(state);
       const incoming = [];
-      for (const row of rows) incoming.push(await textElement(row.text,row.rect,index,size,{owner:OWNER,kind:'item',bookId:state.bookId,pageId:page.id,itemId:row.item.id,itemKind:row.item.kind,version:row.item.version,rect:row.rect}));
+      for (const row of rows) incoming.push(await textElement(row.text,row.rect,index,size,{owner:OWNER,kind:'item',bookId:state.bookId,pageId:page.id,itemId:row.item.id,itemKind:row.item.kind,version:row.item.version,rect:row.rect,renderText:row.text}));
       // File-level mutation is safe only after flushing and before a host reload.
       // Deleting by native numInPage never touches unowned strokes or links.
       if (owned.length) changed(await PluginFileAPI.deleteElements(path,index,owned.map(e => e.numInPage)));
@@ -393,6 +402,6 @@ export async function sync(report = () => {}) {
     // Acknowledge only after every managed page was applied successfully.
     report('Confirming completed sync with the server');
     const confirmed = await api(state,'/planner/api/v1/sync/',{schema:1,book_id:state.bookId,operations:[],acknowledged_revision:state.appliedRevision});
-    return `${confirmed.review_count ?? state.reviews?.length ?? 0} changes need review. ${overflow ? overflow + ' entries are available in the app; erase old cancellation marks to free blocked rows. ' : ''}Planner synced.${confirmed.validated === false ? ' Google writes await device acceptance.' : ''}`;
+    return `${confirmed.review_count ?? state.reviews?.length ?? 0} changes need review. ${overflow ? overflow + ' entries remain in the app because day boxes are full or contain handwriting. ' : ''}Planner synced.${confirmed.validated === false ? ' Google writes await device acceptance.' : ''}`;
   } finally { releaseAll(); busy = false; }
 }

@@ -13,7 +13,7 @@
   <form class="planner-form" method="post" action="{% url 'planner:review' operation.pk %}">
     {% csrf_token %}
     {{ form.as_p }}
-    {% if not google_sync_ready %}<p class="text-sm text-slate-500">Google sync is paused. Entries assigned to a calendar or task list will stay queued until sync is enabled.</p>{% endif %}
+    <p class="text-sm text-slate-500">Calendar entries stay queued while their provider's writes are disabled. Exchange supports ordinary appointments; change meetings and recurring entries in Outlook.</p>
     <div class="flex flex-wrap gap-3 mt-4">
       <button class="planner-button" name="action" value="accept_capture">Accept entry</button>
       <a class="planner-button" href="{% url 'planner:dashboard' %}?book={{ book.pk }}">Cancel</a>

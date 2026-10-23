@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 
-async function engine({permission=2,count=2,expected=3,pairing=null,pairingRead=null,pending=[],fastTimeouts=false,awake=false}={}) {
+async function engine({permission=2,count=2,expected=3,pairing=null,pairingRead=null,pending=[],fastTimeouts=false,awake=false,codecVersion=2}={}) {
   const calls=[];
   let state={origin:'https://planner.example:8443',bookId:'12345678-1234-1234-1234-123456789abc',token:'a'.repeat(43),caPem:'-----BEGIN CERTIFICATE-----\nYWJj\n-----END CERTIFICATE-----',appliedRevision:0,outbox:pending};
   const response={success:true,result:null};
@@ -16,6 +16,7 @@ async function engine({permission=2,count=2,expected=3,pairing=null,pairingRead=
     Element:{TYPE_TEXT:500,TYPE_STROKE:0},TextBox:class{},RattaFileSelector:{},FileUtils:{},
   };
   const native={NativeModules:{PlannerStorage:{
+    getStateCodecVersion:async()=>codecVersion,
     setKeepAwake:async()=>{if(awake instanceof Error)throw awake;return awake;},
     readPairingFromDocument:async()=>{calls.push('read-pairing');return pairingRead ? pairingRead() : JSON.stringify(pairing || {schema:1,...state});},
     load:async()=>JSON.stringify(state),
@@ -31,6 +32,13 @@ async function engine({permission=2,count=2,expected=3,pairing=null,pairingRead=
   await module.evaluate();
   return {api:module.namespace,calls,get state(){return state;}};
 }
+
+test('outdated native storage stops before reading or writing saved state',async()=>{
+  const f=await engine({codecVersion:1,pending:[{id:'keep'}]});
+  await assert.rejects(f.api.load(),/full planner plugin 0.1.7/);
+  assert.equal(f.state.outbox[0].id,'keep');
+  assert.deepEqual(f.calls,[]);
+});
 
 test('notebook diagnosis reports page mismatch without saving or changing notebook elements',async()=>{
   const {api,calls}=await engine();const stages=[];

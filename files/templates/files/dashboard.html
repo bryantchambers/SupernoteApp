@@ -49,13 +49,17 @@
     </div>
 </div>
 <!-- AI Result Modal -->
-<div x-data="{ open: false, markdown: '', html: '', id: null }" 
-     @htmx:after-request.window="if ($event.detail.pathInfo.requestPath.includes('process-ai')) { 
-        let response = JSON.parse($event.detail.xhr.responseText);
+<div x-data="{ open: false, markdown: '', html: '', id: null, previewNotice: '', providerLabel: '' }"
+     @htmx:after-request.window="if (($event.detail.pathInfo?.requestPath || '').includes('process-ai')) {
+        let response;
+        try { response = JSON.parse($event.detail.xhr.responseText); }
+        catch (error) { alert('AI processing could not complete. Please retry; if it persists, check Settings and the server logs.'); return; }
         if (response.success) {
             markdown = response.markdown;
             html = response.html;
             id = response.id;
+            previewNotice = response.preview_notice || '';
+            providerLabel = (response.provider === 'ollama' ? 'Processed locally with Ollama' : 'Processed with Google Gemini') + (response.model ? ' · ' + response.model : '');
             open = true;
         } else {
             alert(response.error);
@@ -75,6 +79,8 @@
             </div>
             <div class="mt-3 sm:mt-0">
                 <h3 class="text-lg font-medium leading-6 text-slate-900 mb-4">AI Processed Note</h3>
+                <p x-text="providerLabel" class="mb-3 text-sm text-slate-500"></p>
+                <p x-show="previewNotice" x-text="previewNotice" class="mb-3 text-sm text-slate-500"></p>
                 
                 <!-- Display rendered HTML instead of raw markdown for a better viewing experience -->
                 <div class="mt-2 bg-slate-50 p-4 rounded-md border border-slate-200 overflow-y-auto max-h-[60vh] text-left prose prose-slate max-w-none">
@@ -150,6 +156,7 @@ document.addEventListener('alpine:init', () => {
             this.loadState();
             this.open = true;
             this.$nextTick(() => {
+                this.$refs.customPromptForm.setAttribute('hx-post', '/process-ai-custom/' + this.pk + '/');
                 htmx.process(this.$refs.customPromptForm);
                 this.$refs.promptInput.focus();
             });
@@ -203,7 +210,7 @@ document.addEventListener('alpine:init', () => {
                     </div>
                 </div>
 
-                <form x-ref="customPromptForm" hx-post="" :hx-post="'/process-ai-custom/' + pk + '/'" hx-swap="none" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' @submit="savePrompt(prompt)">
+                <form x-ref="customPromptForm" hx-swap="none" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' @submit="savePrompt(prompt)">
                     <label class="block text-sm font-medium text-slate-700 mb-2">Prompt</label>
                     <textarea x-ref="promptInput" x-model="prompt" name="prompt" rows="10" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Describe the transformation you want..."></textarea>
                     <div class="mt-3 text-xs text-slate-500">

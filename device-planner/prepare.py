@@ -37,7 +37,7 @@ assets.mkdir(exist_ok=True)
 (assets / 'planner.png').write_bytes(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR',struct.pack('>IIBBBBB',64,64,8,6,0,0,0)) + chunk(b'IDAT',zlib.compress(bytes(pixels))) + chunk(b'IEND',b''))
 native = target / 'android/app/src/main/java/com/supernoteplanner'
 native.mkdir(parents=True, exist_ok=True)
-for path in (source / 'native').glob('*.kt'):
+for path in list((source / 'native').glob('*.kt')) + list((source / 'native').glob('*.java')):
     shutil.copy2(path, native / path.name)
 metro = target / 'metro.config.js'
 metro.write_text("const {getDefaultConfig, mergeConfig} = require('@react-native/metro-config');\nmodule.exports = mergeConfig(getDefaultConfig(__dirname), {resolver:{sourceExts:['js','jsx','json','ts','tsx','mjs']}});\n")

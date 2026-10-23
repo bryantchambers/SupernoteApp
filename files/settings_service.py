@@ -26,6 +26,9 @@ SERVICE_LABELS = {
 }
 
 EDITABLE_ENV_KEYS = [
+    'AI_PROVIDER',
+    'OLLAMA_BASE_URL',
+    'OLLAMA_MODEL',
     'SUPERNOTE_REMOTE',
     'GOOGLE_GENAI_API_KEY',
     'GOOGLE_GENAI_MODEL',
@@ -44,6 +47,9 @@ EDITABLE_ENV_KEYS = [
 SECRET_KEYS = {'GOOGLE_GENAI_API_KEY', 'ZOTERO_API_KEY', 'KOOFR_TOKEN'}
 
 RUNTIME_SETTINGS = {
+    'AI_PROVIDER': 'AI_PROVIDER',
+    'OLLAMA_BASE_URL': 'OLLAMA_BASE_URL',
+    'OLLAMA_MODEL': 'OLLAMA_MODEL',
     'SUPERNOTE_REMOTE': 'SUPERNOTE_REMOTE',
     'GOOGLE_GENAI_API_KEY': 'GOOGLE_GENAI_API_KEY',
     'GOOGLE_GENAI_MODEL': 'GOOGLE_GENAI_MODEL',
@@ -60,6 +66,9 @@ RUNTIME_SETTINGS = {
 }
 
 DEFAULTS = {
+    'AI_PROVIDER': 'gemini',
+    'OLLAMA_BASE_URL': 'http://rockpigeon:11434',
+    'OLLAMA_MODEL': 'qwen3-vl:4b-instruct-q4_K_M',
     'SUPERNOTE_REMOTE': 'SuperNote:Supernote',
     'GOOGLE_GENAI_MODEL': 'gemini-3.6-flash',
     'ZOTERO_API_BASE': 'https://api.zotero.org',
@@ -219,6 +228,15 @@ def update_env_from_post(post) -> dict:
         if key in SECRET_KEYS and not value:
             value = current.get(key, '')
         updates[key] = value
+    if 'AI_PROVIDER' in updates:
+        updates['AI_PROVIDER'] = updates['AI_PROVIDER'].lower()
+        if updates['AI_PROVIDER'] not in ('gemini', 'ollama'):
+            raise ValueError('Choose Gemini or Ollama as the AI provider.')
+    if 'OLLAMA_BASE_URL' in updates:
+        from .ollama_service import validate_base_url
+        updates['OLLAMA_BASE_URL'] = validate_base_url(updates['OLLAMA_BASE_URL'])
+    if 'OLLAMA_MODEL' in updates and (not updates['OLLAMA_MODEL'] or ':cloud' in updates['OLLAMA_MODEL'].lower()):
+        raise ValueError('Choose an installed local Ollama vision model, without a :cloud tag.')
     return write_env_values(updates)
 
 
@@ -251,6 +269,16 @@ def test_service(service: str) -> ServiceCheck:
     if service == 'ai':
         if not is_service_enabled('ai'):
             return ServiceCheck(service, False, 'AI processing is disabled.')
+        if settings.AI_PROVIDER == 'ollama':
+            from .ollama_service import OllamaVision
+            try:
+                client = OllamaVision()
+                digest = client.check_model()
+            except (ValueError, RuntimeError) as exc:
+                return ServiceCheck(service, False, str(exc))
+            return ServiceCheck(service, True, f'Ollama is reachable; local vision model {client.model} is available ({digest[:12]}).')
+        if settings.AI_PROVIDER != 'gemini':
+            return ServiceCheck(service, False, 'Choose Gemini or Ollama as the AI provider.')
         if not getattr(settings, 'GOOGLE_GENAI_API_KEY', ''):
             return ServiceCheck(service, False, 'Gemini API key is not configured.')
         return ServiceCheck(service, True, f'Gemini key is configured for {settings.GOOGLE_GENAI_MODEL}.')

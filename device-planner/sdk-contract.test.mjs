@@ -21,7 +21,7 @@ async function fixture({pageCount=3}={}) {
   const previewAttempts=[];
   let readFailure=false,recoveryCount=0;
   const size={width:1403,height:1871}; // Odd dimensions expose fractional rectangle bugs.
-  const region={date:'2027-01-05',digital:[.07,.183,.86,.054],capture:[.07,.242,.86,.076]};
+  const region={date:'2027-01-05',y:.15,h:.18,digital:[.07,.183,.86,.054],capture:[.07,.242,.86,.076]};
   const manifest={schema:1,pages:Array.from({length:pageCount},(_,index)=>({id:'page-'+index,index,kind:index===0?'week':'notes',regions:index===0?[region]:[]}))};
   const points=[{x:200,y:490},{x:220,y:500},{x:240,y:490}];
   const originalInk={type:0,stroke:{penType:10},userData:'',_points:points};
@@ -61,6 +61,7 @@ async function fixture({pageCount=3}={}) {
     generateNotePng:async params=>{assert.equal(params.times,1);calls.push('preview');return ok(true);},
   };
   const storage={
+    getStateCodecVersion:async()=>2,
     load:async()=>{if(readFailure)throw new Error('AEADBadTagException: state authentication failed');return JSON.stringify(saved);},
     save:async(_root,value)=>{saved=JSON.parse(value);return true;},
     readPairingFromDocument:async()=>JSON.stringify({schema:1,origin:saved.origin,bookId:saved.bookId,token:saved.token,caPem:'-----BEGIN CERTIFICATE-----\nYWJj\n-----END CERTIFICATE-----'}),
@@ -251,4 +252,40 @@ test('recovery refuses readable state and mismatched page identities before crea
   assert.equal(wrong.recoveryCount,0);
   assert.deepEqual(wrong.pages,before);
   assert.equal(wrong.cache.size,0);
+});
+
+test('expanded rows render five events and refresh overflow text without an item version change',async()=>{
+  const f=await fixture();f.pages[0].splice(0,1); // Blank capture area; preserve its PDF link.
+  for(let n=0;n<5;n++)f.items.push({id:'extra-'+n,day:'2027-01-05',kind:'event',title:'Work '+n,start_time:'1'+n+':00',version:1});
+  await f.engine.initialize();await f.engine.sync();
+  let rows=f.pages[0].filter(e=>e.userData && JSON.parse(e.userData).kind==='item');
+  assert.equal(rows.length,5);
+  assert.ok(rows.some(e=>e.textBox.textContentFull.includes('(+1 in app)')));
+  f.items.push({id:'later',day:'2027-01-05',kind:'event',title:'Later',start_time:'23:00',version:1});
+  await f.engine.sync();
+  rows=f.pages[0].filter(e=>e.userData && JSON.parse(e.userData).kind==='item');
+  assert.equal(rows.length,5);
+  assert.ok(rows.some(e=>e.textBox.textContentFull.includes('(+2 in app)')));
+  const before=f.calls.filter(c=>c==='insert').length;
+  await f.engine.sync();
+  assert.equal(f.calls.filter(c=>c==='insert').length,before,'Unchanged rows should not be rewritten');
+});
+
+test('crossing an expanded event inside the capture area cancels it before OCR',async()=>{
+  const f=await fixture();f.pages[0].splice(0,1);
+  for(let n=0;n<4;n++)f.items.push({id:'extra-'+n,day:'2027-01-05',kind:'event',title:'Work '+n,start_time:'1'+n+':00',version:1});
+  await f.engine.initialize();await f.engine.sync();
+  const row=f.pages[0].filter(e=>e.userData && JSON.parse(e.userData).kind==='item').find(e=>JSON.parse(e.userData).rect[1]>.25);
+  const metadata=JSON.parse(row.userData),rect=metadata.rect;
+  f.pages[0].push({type:0,stroke:{penType:10},userData:'',_points:[
+    {x:(rect[0]+.01)*1403,y:(rect[1]+rect[3]/2)*1871},
+    {x:(rect[0]+rect[2]-.01)*1403,y:(rect[1]+rect[3]/2)*1871},
+  ]});
+  f.api.recognizeElements=async()=>{throw new Error('Generated event cancellation must not be OCRed as a new capture');};
+  await f.engine.sync();
+  assert.equal(f.received.size,1);
+  const operation=[...f.received.values()][0];
+  assert.equal(operation.action,'cancel');
+  assert.equal(operation.item_id,metadata.itemId);
+  assert.equal(f.cache.size,0);
 });

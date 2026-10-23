@@ -92,13 +92,22 @@ export function displayRows(page, items, {previous = [], ink = []} = {}) {
   rows.overflow = 0;
   for (const region of page.regions || []) {
     const entries = items.filter(i => i.day === region.date && !i.deleted).sort((a, b) => (a.start_time || '').localeCompare(b.start_time || '') || a.title.localeCompare(b.title));
-    const slots = [null,null];
-    const blocked = slots.map((_,n) => ink.some(box => box && box[2] > region.digital[0] && box[0] < region.digital[0]+region.digital[2] && box[3] > region.digital[1]+n*region.digital[3]/2 && box[1] < region.digital[1]+(n+1)*region.digital[3]/2));
+    // Keep the original row pitch: existing annotations/cancellation marks must
+    // not attach to a different event when the display area expands.
+    const pitch = region.digital[3] / 2;
+    const next = (page.regions || []).filter(r => Number.isFinite(r.y) && r.y > region.digital[1]).map(r => r.y - .012);
+    const ownBottom = Number.isFinite(region.y) && Number.isFinite(region.h)
+      ? region.y + region.h - .008 : region.digital[1] + region.digital[3];
+    const bottom = Math.min(ownBottom, .89, ...next);
+    const capacity = Math.max(0, Math.min(32, Math.floor((bottom - region.digital[1] + 1e-9) / pitch)));
+    const slots = Array(capacity).fill(null);
+    const blocked = slots.map((_,n) => ink.some(box => box && box[2] > region.digital[0] && box[0] < region.digital[0]+region.digital[2] && box[3] > region.digital[1]+n*pitch && box[1] < region.digital[1]+(n+1)*pitch));
     for (const prior of previous) {
       const item = entries.find(i => i.id === prior.itemId);
       if (!item || !prior.rect || Math.abs(prior.rect[0]-region.digital[0]) > .001) continue;
-      const n = Math.round((prior.rect[1]-region.digital[1])/(region.digital[3]/2));
-      if (n >= 0 && n < 2) slots[n] = item;
+      const n = Math.round((prior.rect[1]-region.digital[1])/pitch);
+      if (n >= 0 && n < capacity && !slots[n] && !slots.some(s => s?.id === item.id) &&
+          Math.abs(prior.rect[1] - (region.digital[1]+n*pitch)) < .001) slots[n] = item;
     }
     for (const item of entries.filter(i => !slots.some(s => s?.id === i.id))) {
       const n = slots.findIndex((s,index) => s === null && !blocked[index]);
@@ -107,14 +116,15 @@ export function displayRows(page, items, {previous = [], ink = []} = {}) {
     const visible = slots.filter(Boolean).length;
     const overflow = entries.length-visible;
     rows.overflow += overflow;
+    const last = slots.reduce((found,item,n) => item ? n : found,-1);
     for (const [n, item] of slots.entries()) {
       if (!item) continue;
       const rect = [...region.digital];
-      rect[1] += n * region.digital[3] / 2;
-      rect[3] /= 2;
+      rect[1] += n * pitch;
+      rect[3] = pitch;
       const prefix = item.kind === 'task' ? (item.completed ? '[x]' : '[ ]') : (item.start_time ? item.start_time.slice(0, 5) : 'All day');
       const title = Array.from(item.title).slice(0,32).join('') + (Array.from(item.title).length > 32 ? '…' : '');
-      rows.push({item, rect, text: `${prefix} ${title}${n === (slots[1] ? 1 : 0) && overflow ? ` (+${overflow} in app)` : ''}`});
+      rows.push({item, rect, text: `${prefix} ${title}${n === last && overflow ? ` (+${overflow} in app)` : ''}`});
     }
   }
   return rows;

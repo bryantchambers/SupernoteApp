@@ -75,6 +75,47 @@ test('calendar refresh never places another entry beneath an old ink mark', () =
   assert.equal(blocked.length,0);
   assert.equal(blocked.overflow,1);
 });
+test('calendar rows fill a day while preserving the original font pitch and next heading', () => {
+  const region = {date:'2027-01-01',y:.15,h:.18,digital:[.07,.183,.86,.054]};
+  const page = {regions:[region,{date:'2027-01-02',y:.34,h:.18,digital:[.07,.373,.86,.054]}]};
+  const items = Array.from({length:7},(_,n)=>({id:String(n),day:region.date,title:'Event '+n,kind:'event'}));
+  const rows = displayRows(page,items);
+  assert.equal(rows.length,5);
+  assert.equal(rows.overflow,2);
+  assert.ok(rows.every(row=>row.rect[3]===.027 && row.rect[1]+row.rect[3] <= .33));
+  assert.match(rows[4].text,/\+2 in app/);
+  assert.ok(rows.slice(0,4).every(row=>!row.text.includes('in app')));
+});
+test('last day stops above navigation and Wednesday leaves weekly notes intact', () => {
+  for(const region of [
+    {date:'2027-01-03',y:.72,h:.18,digital:[.07,.753,.86,.054]},
+    {date:'2027-01-06',y:.53,h:.18,digital:[.07,.563,.86,.054]},
+  ]) {
+    const items=Array.from({length:12},(_,n)=>({id:String(n),day:region.date,title:'Event '+n,kind:'event'}));
+    const rows=displayRows({regions:[region]},items);
+    assert.equal(rows.length,5);
+    assert.ok(rows.every(row=>row.rect[1]+row.rect[3] <= Math.min(.89,region.y+region.h)));
+  }
+});
+test('expanded rows avoid ink and preserve previously placed events and cancellation targets', () => {
+  const region={date:'2027-01-01',y:.15,h:.18,digital:[.07,.183,.86,.054]};
+  const items=Array.from({length:6},(_,n)=>({id:String(n),day:region.date,title:'Event '+n,kind:'event'}));
+  const previous=[{itemId:'4',rect:[.07,.21,.86,.027]}];
+  const ink=[[.07,.246,.93,.25]]; // Third display row: new text must skip it.
+  const rows=displayRows({regions:[region]},items,{previous,ink});
+  assert.equal(rows.length,4);
+  assert.equal(rows.find(row=>row.item.id==='4').rect[1],.21);
+  assert.ok(rows.every(row=>row.rect[1]+row.rect[3] <= .246 || row.rect[1] >= .25));
+  assert.equal(rows.overflow,2);
+});
+test('next-day boundary limits capacity even when its region metadata overlaps', () => {
+  const region={date:'2027-01-01',y:.15,h:.5,digital:[.07,.183,.86,.054]};
+  const page={regions:[region,{date:'2027-01-02',y:.29,h:.18,digital:[.07,.323,.86,.054]}]};
+  const items=Array.from({length:10},(_,n)=>({id:String(n),day:region.date,title:'Event '+n,kind:'event'}));
+  const rows=displayRows(page,items);
+  assert.equal(rows.length,3);
+  assert.ok(rows.every(row=>row.rect[1]+row.rect[3] <= .278));
+});
 test('source handwriting keeps its item identity and receives current versions', () => {
   const state = {outbox:[{id:'source'}],bindings:{source:{pageId:'page',rect:[.1,.2,.4,.02]}}};
   const next = acknowledge(state,{operations:[{id:'source',item_id:'item',version:1}],revision:4,items:[{id:'item',version:2,kind:'event'}]});

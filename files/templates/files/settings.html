@@ -59,11 +59,27 @@
             </div>
             <div class="grid gap-4 md:grid-cols-2">
                 <label class="block text-sm md:col-span-2">
+                    <span class="mb-1 block font-medium text-slate-600">Processing provider</span>
+                    <select name="AI_PROVIDER" class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+                        <option value="ollama" {% if values.AI_PROVIDER == 'ollama' %}selected{% endif %}>Ollama · local on rockpigeon</option>
+                        <option value="gemini" {% if values.AI_PROVIDER == 'gemini' %}selected{% endif %}>Google Gemini · cloud</option>
+                    </select>
+                    <span class="mt-2 block text-xs text-slate-500">Both Notes AI actions use this choice. Ollama processes up to 12 pages locally, one at a time, and never falls back to a cloud provider. Long notes with custom prompts may need splitting. Review handwriting transcriptions for errors.</span>
+                </label>
+                <label class="block text-sm">
+                    <span class="mb-1 block font-medium text-slate-600">Ollama address</span>
+                    <input type="url" name="OLLAMA_BASE_URL" value="{{ values.OLLAMA_BASE_URL }}" class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+                </label>
+                <label class="block text-sm">
+                    <span class="mb-1 block font-medium text-slate-600">Local vision model</span>
+                    <input type="text" name="OLLAMA_MODEL" value="{{ values.OLLAMA_MODEL }}" class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
+                </label>
+                <label class="block text-sm md:col-span-2">
                     <span class="mb-1 block font-medium text-slate-600">Gemini API key</span>
                     <input type="password" name="GOOGLE_GENAI_API_KEY" placeholder="{{ masked_values.GOOGLE_GENAI_API_KEY|default:'Not configured' }}" class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
                 </label>
                 <label class="block text-sm">
-                    <span class="mb-1 block font-medium text-slate-600">Model</span>
+                    <span class="mb-1 block font-medium text-slate-600">Gemini model</span>
                     <input type="text" name="GOOGLE_GENAI_MODEL" value="{{ values.GOOGLE_GENAI_MODEL }}" class="w-full rounded border border-slate-300 px-3 py-2 text-sm">
                 </label>
             </div>

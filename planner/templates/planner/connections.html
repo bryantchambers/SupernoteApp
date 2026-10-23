@@ -1,0 +1,39 @@
+<div>
+  <h3 class="font-medium mb-4">Calendar connections</h3>
+  <div class="border rounded-lg p-3 mb-3">
+    <h4 class="font-medium text-sm mb-2">Google calendars &amp; tasks</h4>
+    <form method="post" action="{% url 'planner:google_connect' %}">{% csrf_token %}<button class="planner-button">{% if connection %}Reconnect{% else %}Connect{% endif %} Google</button></form>
+    {% if connection %}<p class="text-xs text-slate-500 mt-2">{{ connection.message }}</p><form class="mt-2" method="post" action="{% url 'planner:refresh_calendars' %}">{% csrf_token %}<button class="planner-button">Refresh Google lists</button></form>{% endif %}
+  </div>
+  <div class="border rounded-lg p-3 mb-4">
+    <h4 class="font-medium text-sm mb-2">KU Exchange</h4>
+    <a class="planner-button" href="{% url 'planner:exchange_connect' %}">{% if exchange_connection %}Replace credential{% else %}Connect work calendar{% endif %}</a>
+    {% if exchange_connection %}
+      <p class="text-xs text-slate-500 mt-2">{{ exchange_connection.message }}</p>
+      <form class="mt-2" method="post" action="{% url 'planner:exchange_test' %}">{% csrf_token %}<button class="planner-button">Test connection &amp; refresh calendars</button></form>
+      <form class="mt-2" method="post" action="{% url 'planner:exchange_disconnect' %}" onsubmit="return confirm('Remove the saved KU credential and stop work sync? Cached events and queued changes will be kept.')">{% csrf_token %}<button class="text-xs text-red-700">Disconnect Exchange</button></form>
+    {% endif %}
+    <p class="text-xs text-slate-500 mt-3">Meetings and recurring events are displayed here; change them in Outlook. Ordinary appointments can sync after connection acceptance.</p>
+  </div>
+  {% if calendars %}
+  <form method="post" action="{% url 'planner:select_all_calendars' %}">
+    {% csrf_token %}
+    {% regroup calendars by connection.get_provider_display as providers %}
+    {% for provider in providers %}
+    <fieldset class="mb-4"><legend class="font-medium text-sm mb-2">{{ provider.grouper }}</legend>
+      {% for cal in provider.list %}
+      <div class="py-2 border-t">
+        <label class="text-sm"><input type="checkbox" name="selected" value="{{ cal.pk }}" {% if cal.selected %}checked{% endif %}> {{ cal.title }} <span class="text-xs text-slate-400">{{ cal.get_kind_display }}</span></label>
+        <label class="block text-xs text-slate-500 mt-1">Pen alias <input class="border rounded p-1 w-32 ml-2" name="alias_{{ cal.pk }}" value="{{ cal.alias }}" maxlength="40" placeholder="{% if cal.connection.provider == 'exchange' %}work{% else %}personal{% endif %}"></label>
+        {% if cal.writable %}<label class="block text-xs text-slate-500 mt-1"><input type="radio" name="default_{{ cal.kind }}" value="{{ cal.pk }}" {% if cal.is_default %}checked{% endif %}> Default destination</label>{% else %}<p class="text-xs text-slate-400">Read only</p>{% endif %}
+      </div>
+      {% endfor %}
+    </fieldset>
+    {% endfor %}
+    <label class="block text-xs text-slate-500 mb-2"><input type="radio" name="default_event" value=""> Choose event calendar per entry</label>
+    <label class="block text-xs text-slate-500 mb-3"><input type="radio" name="default_task" value=""> Choose task list per entry</label>
+    <p class="text-xs text-slate-500 mb-3">A pen alias routes handwriting, for example: 14:00–15:00 Project work @work.</p>
+    <button class="planner-button">Save calendar selection</button>
+  </form>
+  {% endif %}
+</div>

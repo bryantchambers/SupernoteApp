@@ -640,17 +640,34 @@ def convert_file(request, pk, output_type):
         return JsonResponse({'error': 'Conversion failed'}, status=500)
 
 def _render_processed_note_response(processed_note):
-    from markdown_it import MarkdownIt
-    md = MarkdownIt('commonmark', {'breaks': True, 'html': True})
-    html_content = md.render(processed_note.markdown_content)
+    from django.utils.html import escape
+    try:
+        from markdown_it import MarkdownIt
+    except ModuleNotFoundError as exc:
+        if exc.name != 'markdown_it':
+            raise
+        # Rich preview is optional; a successful conversion must still be usable
+        # in the minimal container, which has no Markdown renderer installed.
+        html_content = '<pre class="whitespace-pre-wrap">{}</pre>'.format(
+            escape(processed_note.markdown_content)
+        )
+        preview_notice = 'Showing Markdown text. Rich preview is unavailable; the Markdown download is complete.'
+    else:
+        md = MarkdownIt('commonmark', {'breaks': True, 'html': False})
+        html_content = md.render(processed_note.markdown_content)
+        preview_notice = ''
     return JsonResponse({
         'success': True,
         'markdown': processed_note.markdown_content,
         'html': html_content,
         'id': processed_note.id,
+        'preview_notice': preview_notice,
+        'provider': getattr(processed_note, 'ai_provider', settings.AI_PROVIDER),
+        'model': getattr(processed_note, 'ai_model', ''),
     })
 
 
+@require_POST
 def process_with_ai(request, pk):
     """View to trigger AI processing of a note."""
     node = get_object_or_404(FileNode, pk=pk)
@@ -658,7 +675,7 @@ def process_with_ai(request, pk):
     if not is_service_enabled('ai'):
         return JsonResponse({'error': 'AI processing is disabled in Settings.'}, status=403)
 
-    if not settings.GOOGLE_GENAI_API_KEY:
+    if settings.AI_PROVIDER == 'gemini' and not settings.GOOGLE_GENAI_API_KEY:
         return JsonResponse({
             'error': 'Gemini API key is not configured. Set GOOGLE_GENAI_API_KEY, GEMINI_API_KEY, or GOOGLE_API_KEY in .env.'
         }, status=500)
@@ -671,6 +688,7 @@ def process_with_ai(request, pk):
     return _render_processed_note_response(processed_note)
 
 
+@require_POST
 def process_with_ai_custom(request, pk):
     """View to trigger AI processing with a custom prompt."""
     node = get_object_or_404(FileNode, pk=pk)
@@ -678,7 +696,7 @@ def process_with_ai_custom(request, pk):
     if not is_service_enabled('ai'):
         return JsonResponse({'error': 'AI processing is disabled in Settings.'}, status=403)
 
-    if not settings.GOOGLE_GENAI_API_KEY:
+    if settings.AI_PROVIDER == 'gemini' and not settings.GOOGLE_GENAI_API_KEY:
         return JsonResponse({
             'error': 'Gemini API key is not configured. Set GOOGLE_GENAI_API_KEY, GEMINI_API_KEY, or GOOGLE_API_KEY in .env.'
         }, status=500)

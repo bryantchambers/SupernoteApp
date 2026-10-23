@@ -15,11 +15,19 @@ class Book(models.Model):
 
 
 class Connection(models.Model):
-    owner = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    provider = models.CharField(max_length=16, choices=[('google', 'Google'), ('exchange', 'KU Exchange')], default='google')
+    suspended = models.BooleanField(default=False)
+    retry_at = models.DateTimeField(null=True, blank=True)
+    failures = models.PositiveIntegerField(default=0)
+    write_verified_at = models.DateTimeField(null=True, blank=True)
     # Auth tokens are encrypted using a deployment key derived from SECRET_KEY.
     credentials = models.TextField(blank=True)
     checked_at = models.DateTimeField(null=True, blank=True)
     message = models.CharField(max_length=250, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['owner', 'provider'], name='planner_connection_provider')]
 
 
 class Calendar(models.Model):
@@ -57,6 +65,11 @@ class Item(models.Model):
     remote_snapshot = models.JSONField(default=dict)
     needs_review = models.BooleanField(default=False)
     updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def provider_read_only(self):
+        return bool(self.calendar_id and self.calendar.connection.provider == 'exchange' and
+                    (self.needs_review or self.remote_snapshot.get('read_only', False)))
 
     class Meta:
         ordering = ['day', 'start_time', 'title']

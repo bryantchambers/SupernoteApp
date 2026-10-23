@@ -9,6 +9,7 @@ from django.db.models import F
 from django.utils import timezone
 from .models import Book, Calendar, Device, Item, Operation
 from .recognition import parse_entry
+from .providers import validate_edit
 
 
 def encode_item(item):
@@ -28,11 +29,13 @@ def bump(book):
 @transaction.atomic
 def save_item(item, expected=None, source='web', operation_id=None):
     book = Book.objects.select_for_update().get(pk=item.book_id)
+    current = None
     if item.pk and Item.objects.filter(pk=item.pk).exists():
         current = Item.objects.get(pk=item.pk)
         if expected is None or current.version != int(expected):
             raise ValueError('This entry changed elsewhere. Reload before saving.')
         item.version = current.version + 1
+    validate_edit(item, current)
     item.save()
     bump(book)
     Operation.objects.create(id=operation_id or uuid.uuid4(), book=book, item=item, source=source, payload=encode_item(item), status='pending' if item.calendar_id else 'local')
